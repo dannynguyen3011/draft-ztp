@@ -1,0 +1,22 @@
+services:
+  authz:
+    url: http://localhost:8181
+
+decision_logs:
+  console: true
+
+bundles:
+  zerotrust:
+    resource: "/policies"
+
+status:
+  console: true
+
+server:
+  encoding:
+    gzip:
+      min_length: 1024
+
+storage:
+  disk:
+    directory: /data 

@@ -7,4 +7,14 @@ node_modules/
 .env.production.local
 npm-debug.log*
 yarn-debug.log*
-yarn-error.log* 
+yarn-error.log*
+
+# OPA data files (generated at runtime)
+opa/data/
+opa/logs/
+*.mem
+*.vlog
+
+# Docker volumes and persistent data
+postgres-data/
+mongodb-data/ 
