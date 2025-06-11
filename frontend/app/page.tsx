@@ -1,29 +1,54 @@
 "use client"
 
-import { useEffect } from "react"
+import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Shield, Lock, UserCheck, Activity, Bell } from "lucide-react"
+import { Shield, Lock, UserCheck, Activity, Bell, User, LogOut } from "lucide-react"
 import { keycloakAuth } from "@/lib/keycloak"
+import PageTracker from "@/components/PageTracker"
 
 export default function Home() {
   const router = useRouter()
+  const [user, setUser] = useState<any>(null)
+  const [mounted, setMounted] = useState(false)
 
   useEffect(() => {
-    // If user is authenticated, redirect to dashboard
-    if (keycloakAuth.isAuthenticated()) {
-      router.push('/dashboard')
-    } else {
-      // If not authenticated, redirect to login
-      router.push('/login')
-    }
-  }, [router])
+    setMounted(true)
+  }, [])
 
-  // This page will redirect, but show landing page briefly
+  useEffect(() => {
+    if (!mounted) return
+
+    // Check if user is authenticated but don't redirect
+    // Just update the UI to show user status
+    if (keycloakAuth.isAuthenticated()) {
+      const currentUser = keycloakAuth.getCurrentUser()
+      setUser(currentUser)
+    }
+  }, [mounted])
+
+  const handleLogin = () => {
+    router.push('/login')
+  }
+
+  const handleDashboard = () => {
+    router.push('/dashboard')
+  }
+
+  const handleLogout = () => {
+    keycloakAuth.logout()
+  }
+
+  // Don't render during SSR
+  if (!mounted) {
+    return null
+  }
+
   return (
     <div className="flex flex-col min-h-screen items-center justify-center text-center px-4">
+      <PageTracker />
       <header className="w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="mx-auto max-w-7xl flex h-14 items-center justify-between px-4">
           <div className="flex items-center space-x-6">
@@ -32,23 +57,48 @@ export default function Home() {
               <span className="hidden font-bold sm:inline-block">ZeroTrust Platform</span>
             </Link>
             <nav className="hidden md:flex items-center space-x-6 text-sm font-medium">
-              <Link href="/dashboard" className="hover:text-foreground/80 transition-colors">
-                Dashboard
-              </Link>
-              <Link href="/users" className="hover:text-foreground/80 transition-colors">
-                Users
-              </Link>
-              <Link href="/policies" className="hover:text-foreground/80 transition-colors">
-                Policies
-              </Link>
-              <Link href="/analytics" className="hover:text-foreground/80 transition-colors">
-                Analytics
-              </Link>
+              {user ? (
+                <>
+                  <Link href="/dashboard" className="hover:text-foreground/80 transition-colors">
+                    Dashboard
+                  </Link>
+                  <Link href="/documentation" className="hover:text-foreground/80 transition-colors">
+                    Documentation
+                  </Link>
+                </>
+              ) : (
+                <>
+                  <Link href="#features" className="hover:text-foreground/80 transition-colors">
+                    Features
+                  </Link>
+                  <Link href="#about" className="hover:text-foreground/80 transition-colors">
+                    About
+                  </Link>
+                </>
+              )}
             </nav>
           </div>
-          <Button variant="outline" size="sm" className="h-8">
-            <Link href="/login">Login</Link>
-          </Button>
+          <div className="flex items-center space-x-2">
+            {user ? (
+              <>
+                <span className="text-sm text-muted-foreground">
+                  Welcome, {user.preferred_username || user.name || 'User'}
+                </span>
+                <Button variant="outline" size="sm" onClick={handleDashboard}>
+                  <User className="h-4 w-4 mr-1" />
+                  Dashboard
+                </Button>
+                <Button variant="outline" size="sm" onClick={handleLogout}>
+                  <LogOut className="h-4 w-4 mr-1" />
+                  Logout
+                </Button>
+              </>
+            ) : (
+              <Button variant="outline" size="sm" onClick={handleLogin}>
+                Login
+              </Button>
+            )}
+          </div>
         </div>
       </header>
 
@@ -61,12 +111,23 @@ export default function Home() {
             Continuously verify every access request, monitor user behavior in real time, and enforce granular access controls.
           </p>
           <div className="mt-6 space-x-4">
-            <Button>Get Started</Button>
-            <Button variant="outline">Learn More</Button>
+            {user ? (
+              <>
+                <Button onClick={handleDashboard}>Go to Dashboard</Button>
+                <Button variant="outline" onClick={() => router.push('/documentation')}>
+                  View Documentation
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button onClick={handleLogin}>Get Started</Button>
+                <Button variant="outline">Learn More</Button>
+              </>
+            )}
           </div>
         </section>
 
-        <section className="w-full max-w-5xl">
+        <section id="features" className="w-full max-w-5xl">
           <h2 className="text-3xl md:text-4xl font-bold tracking-tighter mb-4">Core Zero Trust Principles</h2>
           <p className="text-muted-foreground mb-8">
             Our platform implements the core principles of Zero Trust architecture to protect your organization from modern threats.

@@ -8,7 +8,7 @@ const inter = Inter({ subsets: ["latin"] })
 export const metadata: Metadata = {
   title: "Zero Trust Platform",
   description: "Unified Zero Trust and Identity Security Platform",
-  generator: 'v0.dev'
+    generator: 'v0.dev'
 }
 
 export default function RootLayout({

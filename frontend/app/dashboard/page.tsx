@@ -11,40 +11,73 @@ import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { AlertCircle, CheckCircle2, Clock, ShieldAlert, ShieldCheck, Users, LogOut, Loader2 } from "lucide-react"
 import Link from "next/link"
-import { securityIncidents, auditLogs, users } from "@/lib/mock-data"
+import { getRecentLogs, getSecurityEvents } from "@/lib/audit-service"
 import { authLogger } from "@/lib/auth-logger"
 
 export default function DashboardPage() {
   const router = useRouter()
   const [user, setUser] = useState<any>(null)
   const [loading, setLoading] = useState(true)
+  const [recentActivity, setRecentActivity] = useState<any[]>([])
+  const [securityIncidents, setSecurityIncidents] = useState<any[]>([])
+  const [activityLoading, setActivityLoading] = useState(true)
 
   useEffect(() => {
-    // Check authentication and get user info
-    if (!keycloakAuth.isAuthenticated()) {
-      router.push('/login')
-      return
-    }
+    const checkAuthAndLoadUser = async () => {
+      // Check authentication and get user info
+      if (!keycloakAuth.isAuthenticated()) {
+        router.push('/login')
+        return
+      }
 
-    const userInfo = keycloakAuth.getCurrentUser()
-    const userRoles = keycloakAuth.getUserRoles()
-    
-    setUser({
-      ...userInfo,
-      roles: userRoles
-    })
-    setLoading(false)
-
-    // Log successful dashboard access
-    if (userInfo) {
-      authLogger.logAuthEvent({
-        action: 'dashboard_access',
-        success: true
-      }).catch(error => {
-        console.warn('Failed to log dashboard access:', error)
+      const userInfo = keycloakAuth.getCurrentUser()
+      const userRoles = keycloakAuth.getUserRoles()
+      
+      setUser({
+        ...userInfo,
+        roles: userRoles
       })
+      setLoading(false)
+
+      // Log successful dashboard access
+      if (userInfo) {
+        authLogger.logAuthEvent({
+          action: 'dashboard_access',
+          success: true
+        }).catch(error => {
+          console.warn('Failed to log dashboard access:', error)
+        })
+      }
     }
+
+    // Small delay to ensure smooth transition
+    checkAuthAndLoadUser()
+
+    // Fetch real activity data
+    fetchActivityData()
   }, [router])
+
+  const fetchActivityData = async () => {
+    try {
+      setActivityLoading(true)
+      
+      // Fetch recent logs and security events from backend
+      const [recentLogs, securityEvents] = await Promise.all([
+        getRecentLogs(5),
+        getSecurityEvents(7, 3)
+      ])
+
+      setRecentActivity(recentLogs)
+      setSecurityIncidents(securityEvents)
+    } catch (error) {
+      console.error('Error fetching activity data:', error)
+      // Keep empty arrays as fallback
+      setRecentActivity([])
+      setSecurityIncidents([])
+    } finally {
+      setActivityLoading(false)
+    }
+  }
 
   const handleLogout = () => {
     // Log logout event before logout
@@ -63,11 +96,9 @@ export default function DashboardPage() {
   // Mock risk level based on user data
   const riskLevel = user?.email?.includes('admin') ? 'low' : user?.email?.includes('test') ? 'high' : 'medium'
 
-  // Get recent incidents from mock data
+  // Use real data from state
   const recentIncidents = securityIncidents.slice(0, 3)
-
-  // Get recent audit logs from mock data
-  const recentAuditLogs = auditLogs.slice(0, 5)
+  const recentAuditLogs = recentActivity.slice(0, 5)
 
   // Calculate compliance score (mock data)
   const complianceScore = 85
@@ -202,7 +233,7 @@ export default function DashboardPage() {
                 <Users className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{users.filter((u) => u.status === "active").length}</div>
+                <div className="text-2xl font-bold">{user ? 1 : 0}</div>
                 <p className="text-xs text-muted-foreground mt-2">+2 since last week</p>
               </CardContent>
             </Card>
@@ -234,53 +265,65 @@ export default function DashboardPage() {
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
             <Card className="col-span-4">
               <CardHeader>
-                <CardTitle>Recent Security Incidents</CardTitle>
-                <CardDescription>Security incidents that require attention</CardDescription>
+                <CardTitle>Recent Security Events</CardTitle>
+                <CardDescription>Security events and potential incidents</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="space-y-4">
-                  {recentIncidents.map((incident) => (
-                    <div key={incident.id} className="flex items-center">
-                      <div
-                        className={`mr-2 h-2 w-2 rounded-full ${
-                          incident.severity === "critical"
-                            ? "bg-red-500"
-                            : incident.severity === "high"
-                              ? "bg-orange-500"
-                              : incident.severity === "medium"
-                                ? "bg-yellow-500"
-                                : "bg-blue-500"
-                        }`}
-                      />
-                      <div className="flex-1 space-y-1">
-                        <p className="text-sm font-medium leading-none">{incident.title}</p>
-                        <p className="text-sm text-muted-foreground">{incident.description}</p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Badge
-                          variant={
-                            incident.status === "open"
-                              ? "destructive"
-                              : incident.status === "investigating"
-                                ? "secondary"
-                                : incident.status === "mitigated"
+                {activityLoading ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-6 w-6 animate-spin" />
+                    <span className="ml-2">Loading security events...</span>
+                  </div>
+                ) : recentIncidents.length > 0 ? (
+                  <div className="space-y-4">
+                    {recentIncidents.map((incident: any) => (
+                      <div key={incident.id} className="flex items-center">
+                        <div
+                          className={`mr-2 h-2 w-2 rounded-full ${
+                            incident.status === "failure" || incident.risk_score > 70
+                              ? "bg-red-500"
+                              : incident.risk_score > 50
+                                ? "bg-orange-500"
+                                : "bg-yellow-500"
+                          }`}
+                        />
+                        <div className="flex-1 space-y-1">
+                          <p className="text-sm font-medium leading-none">
+                            {incident.action || incident.title || 'Security Event'}
+                          </p>
+                          <p className="text-sm text-muted-foreground">
+                            {incident.details?.username && `User: ${incident.details.username} - `}
+                            {incident.status === "failure" ? "Failed" : "Suspicious"} activity from {incident.ip_address || "Unknown IP"}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Badge
+                            variant={
+                              incident.status === "failure"
+                                ? "destructive"
+                                : incident.risk_score > 70
                                   ? "secondary"
                                   : "outline"
-                          }
-                        >
-                          {incident.status}
-                        </Badge>
-                        <Clock className="h-4 w-4 text-muted-foreground" />
-                        <span className="text-xs text-muted-foreground">
-                          {new Date(incident.timestamp).toLocaleDateString()}
-                        </span>
+                            }
+                          >
+                            {incident.status === "failure" ? "Failed" : `Risk: ${incident.risk_score || 'Medium'}`}
+                          </Badge>
+                          <Clock className="h-4 w-4 text-muted-foreground" />
+                          <span className="text-xs text-muted-foreground">
+                            {new Date(incident.timestamp).toLocaleDateString()}
+                          </span>
+                        </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-8 text-muted-foreground">
+                    No security events found
+                  </div>
+                )}
                 <div className="mt-4 text-right">
                   <Button variant="outline" size="sm" asChild>
-                    <Link href="/dashboard/incident-response">View All Incidents</Link>
+                    <Link href="/dashboard/audit">View All Events</Link>
                   </Button>
                 </div>
               </CardContent>
@@ -406,27 +449,43 @@ export default function DashboardPage() {
               <CardDescription>Your recent security-related activities</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="space-y-4">
-                {recentAuditLogs.map((log) => (
-                  <div key={log.id} className="flex items-center">
-                    <div
-                      className={`mr-2 h-2 w-2 rounded-full ${
-                        log.status === "success" ? "bg-green-500" : "bg-red-500"
-                      }`}
-                    />
-                    <div className="flex-1 space-y-1">
-                      <p className="text-sm font-medium leading-none">
-                        {log.action.charAt(0).toUpperCase() + log.action.slice(1).replace(/_/g, " ")}
-                      </p>
-                      <p className="text-sm text-muted-foreground">
-                        {log.status === "success" ? "Successful" : "Failed"} {log.action.replace(/_/g, " ")} from{" "}
-                        {log.ipAddress}
-                      </p>
+              {activityLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="h-6 w-6 animate-spin" />
+                  <span className="ml-2">Loading activity...</span>
+                </div>
+              ) : recentAuditLogs.length > 0 ? (
+                <div className="space-y-4">
+                  {recentAuditLogs.map((log: any) => (
+                    <div key={log.id} className="flex items-center">
+                      <div
+                        className={`mr-2 h-2 w-2 rounded-full ${
+                          log.status === "success" ? "bg-green-500" : "bg-red-500"
+                        }`}
+                      />
+                      <div className="flex-1 space-y-1">
+                        <p className="text-sm font-medium leading-none">
+                          {log.action.charAt(0).toUpperCase() + log.action.slice(1).replace(/_/g, " ")}
+                        </p>
+                        <p className="text-sm text-muted-foreground">
+                          {log.status === "success" ? "Successful" : "Failed"} {log.action.replace(/_/g, " ")} from{" "}
+                          {log.ip_address || log.ipAddress || "Unknown IP"}
+                        </p>
+                        {log.details?.username && (
+                          <p className="text-xs text-muted-foreground">
+                            User: {log.details.username}
+                          </p>
+                        )}
+                      </div>
+                      <div className="text-xs text-muted-foreground">{new Date(log.timestamp).toLocaleString()}</div>
                     </div>
-                    <div className="text-xs text-muted-foreground">{new Date(log.timestamp).toLocaleString()}</div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-8 text-muted-foreground">
+                  No recent activity found
+                </div>
+              )}
               <div className="mt-4 text-right">
                 <Button variant="outline" size="sm" asChild>
                   <Link href="/dashboard/audit">View All Activity</Link>

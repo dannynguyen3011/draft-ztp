@@ -7,7 +7,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
-import { Shield, AlertTriangle, CheckCircle, Clock, ArrowDownCircle, ArrowUpCircle, Loader2 } from "lucide-react"
+import { Shield, AlertTriangle, CheckCircle, Clock, ArrowDownCircle, ArrowUpCircle, Loader2, Lock } from "lucide-react"
+import { AuthorizedComponent } from "@/components/AuthorizedComponent"
 
 interface UserStatus {
   id: string
@@ -36,7 +37,7 @@ export default function UsersPage() {
 
     // For demo purposes, we'll allow all authenticated users to view this page
     // In a real app, you'd check roles from Keycloak token
-    
+
     const fetchUsers = async () => {
       try {
         setLoading(true)
@@ -142,9 +143,9 @@ export default function UsersPage() {
       case "high":
         return "destructive"
       case "medium":
-        return "warning"
+        return "secondary"
       default:
-        return "success"
+        return "default"
     }
   }
 
@@ -166,6 +167,30 @@ export default function UsersPage() {
   }
 
   return (
+    <AuthorizedComponent 
+      resource="users" 
+      action="read"
+      fallback={
+        <div className="flex flex-col items-center justify-center min-h-[400px] p-8">
+          <div className="text-center space-y-4">
+            <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto">
+              <Lock className="w-8 h-8 text-red-600" />
+            </div>
+            <h2 className="text-2xl font-semibold text-gray-900">Access Denied</h2>
+            <p className="text-gray-600 max-w-md">
+              You don't have permission to access User Management. Only managers and administrators can view this page.
+            </p>
+            <Button 
+              variant="outline" 
+              onClick={() => router.push("/dashboard")}
+              className="mt-4"
+            >
+              Return to Dashboard
+            </Button>
+          </div>
+        </div>
+      }
+    >
     <div className="container py-8">
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-2xl font-bold">User Risk Management</h1>
@@ -302,5 +327,6 @@ export default function UsersPage() {
         </CardContent>
       </Card>
     </div>
+    </AuthorizedComponent>
   )
 }

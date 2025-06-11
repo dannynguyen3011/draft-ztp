@@ -4,8 +4,9 @@ import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { BarChart3, TrendingUp, TrendingDown, Users, Shield, AlertTriangle, Activity } from "lucide-react"
+import { BarChart3, TrendingUp, TrendingDown, Users, Shield, AlertTriangle, Activity, Lock } from "lucide-react"
 import { useAuth } from "@/lib/useAuth"
+import { AuthorizedComponent } from "@/components/AuthorizedComponent"
 
 export default function AnalyticsPage() {
   const router = useRouter()
@@ -21,6 +22,30 @@ export default function AnalyticsPage() {
   }
 
   return (
+    <AuthorizedComponent 
+      resource="analytics" 
+      action="read"
+      fallback={
+        <div className="flex flex-col items-center justify-center min-h-[400px] p-8">
+          <div className="text-center space-y-4">
+            <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto">
+              <Lock className="w-8 h-8 text-red-600" />
+            </div>
+            <h2 className="text-2xl font-semibold text-gray-900">Access Denied</h2>
+            <p className="text-gray-600 max-w-md">
+              You don't have permission to access Analytics. Only managers and administrators can view this page.
+            </p>
+            <Button 
+              variant="outline" 
+              onClick={() => router.push("/dashboard")}
+              className="mt-4"
+            >
+              Return to Dashboard
+            </Button>
+          </div>
+        </div>
+      }
+    >
     <div className="flex flex-col gap-4 p-4 md:gap-8 md:p-8">
       <div className="flex items-center justify-between">
         <div>
@@ -121,5 +146,6 @@ export default function AnalyticsPage() {
         </Card>
       </div>
     </div>
+    </AuthorizedComponent>
   )
 } 

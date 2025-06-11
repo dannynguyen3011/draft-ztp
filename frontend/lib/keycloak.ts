@@ -145,12 +145,17 @@ export class KeycloakAuth {
     // Clear local storage first
     this.clearLocalStorage()
 
-    // Try Keycloak logout first
+    // Navigate to main page immediately to prevent flash
+    window.location.href = '/'
+
+    // Then try Keycloak logout in background (won't cause redirect flash)
     try {
-      this.keycloakLogout(idToken)
+      if (idToken) {
+        // Do a background logout to Keycloak without redirect
+        this.backgroundKeycloakLogout(idToken)
+      }
     } catch (error) {
-      console.error('Keycloak logout failed, falling back to simple logout:', error)
-      this.simpleLogout()
+      console.error('Background Keycloak logout failed:', error)
     }
   }
 
@@ -180,10 +185,28 @@ export class KeycloakAuth {
     window.location.href = `${logoutUrl}?${params}`
   }
 
-  // Simple logout (just redirect to login)
+  // Background Keycloak logout (without redirect)
+  private backgroundKeycloakLogout(idToken: string): void {
+    const logoutUrl = `${this.keycloakUrl}/realms/${this.realm}/protocol/openid-connect/logout`
+    const params = new URLSearchParams()
+
+    if (idToken) {
+      params.append('id_token_hint', idToken)
+    }
+
+    // Use fetch to logout in background without redirect
+    fetch(`${logoutUrl}?${params}`, {
+      method: 'GET',
+      mode: 'no-cors' // Prevent CORS issues
+    }).catch(error => {
+      console.warn('Background Keycloak logout failed:', error)
+    })
+  }
+
+  // Simple logout (just redirect to main page)
   private simpleLogout(): void {
     console.log('Performing simple logout')
-    window.location.href = '/login'
+    window.location.href = '/'
   }
 
   // Manual logout (for testing) - just clears storage and redirects

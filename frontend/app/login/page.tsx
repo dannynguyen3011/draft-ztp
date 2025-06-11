@@ -80,7 +80,7 @@ export default function LoginPage() {
               <p className="text-xs text-gray-600">
                 Realm: {process.env.NEXT_PUBLIC_KEYCLOAK_REALM}
               </p>
-            </div>
+              </div>
           </CardContent>
         </Card>
       </div>
