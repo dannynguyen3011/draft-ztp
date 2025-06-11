@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Role Extraction</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .token-section { margin: 20px 0; padding: 20px; border: 1px solid #ccc; }
+        .roles { margin: 10px 0; }
+        .role-badge { 
+            display: inline-block; 
+            background: #007bff; 
+            color: white; 
+            padding: 4px 8px; 
+            margin: 2px; 
+            border-radius: 4px; 
+            font-size: 12px;
+        }
+        .admin { background: #dc3545; }
+        .manager { background: #6c757d; }
+        .employee { background: #28a745; }
+    </style>
+</head>
+<body>
+    <h2>JWT Role Extraction Test</h2>
+    
+    <div class="token-section">
+        <h3>Sample JWT Token Structure</h3>
+        <p>This shows what the JWT payload should contain:</p>
+        <pre id="sampleToken">{
+  "realm_access": {
+    "roles": ["manager", "offline_access", "uma_authorization"]
+  },
+  "resource_access": {
+    "demo-client": {
+      "roles": ["manager"]
+    }
+  },
+  "preferred_username": "dung",
+  "email": "dung@gmail.com"
+}</pre>
+    </div>
+
+    <div class="token-section">
+        <h3>Extracted Roles</h3>
+        <div id="extractedRoles">
+            <div class="roles">
+                <span class="role-badge manager">manager</span>
+            </div>
+            <p><em>Filtered out: offline_access, uma_authorization, default-roles-demo</em></p>
+        </div>
+    </div>
+
+    <div class="token-section">
+        <h3>Role Display Examples</h3>
+        <div class="roles">
+            <span class="role-badge admin">admin</span>
+            <span class="role-badge manager">manager</span>
+            <span class="role-badge employee">employee</span>
+        </div>
+    </div>
+
+    <script>
+        // Test function to extract roles (similar to the TypeScript version)
+        function extractRoles(tokenPayload) {
+            try {
+                // Extract realm roles
+                const realmRoles = tokenPayload.realm_access?.roles || [];
+                
+                // Extract client roles
+                const clientRoles = [];
+                if (tokenPayload.resource_access) {
+                    Object.values(tokenPayload.resource_access).forEach(client => {
+                        if (client.roles) {
+                            clientRoles.push(...client.roles);
+                        }
+                    });
+                }
+                
+                // Combine and filter out default Keycloak roles
+                const allRoles = [...realmRoles, ...clientRoles];
+                const userRoles = allRoles.filter(role => 
+                    !['offline_access', 'uma_authorization', 'default-roles-demo'].includes(role)
+                );
+                
+                return userRoles;
+            } catch (error) {
+                console.error('Error extracting roles:', error);
+                return [];
+            }
+        }
+
+        // Test with sample data
+        const samplePayload = {
+            "realm_access": {
+                "roles": ["manager", "offline_access", "uma_authorization"]
+            },
+            "resource_access": {
+                "demo-client": {
+                    "roles": ["manager"]
+                }
+            },
+            "preferred_username": "dung",
+            "email": "dung@gmail.com"
+        };
+
+        const roles = extractRoles(samplePayload);
+        console.log('Extracted roles:', roles);
+        
+        // Update UI to show the extracted roles
+        document.addEventListener('DOMContentLoaded', function() {
+            const rolesContainer = document.getElementById('extractedRoles');
+            const rolesDiv = rolesContainer.querySelector('.roles');
+            
+            if (roles.length > 0) {
+                rolesDiv.innerHTML = roles.map(role => 
+                    `<span class="role-badge ${role}">${role}</span>`
+                ).join('');
+            } else {
+                rolesDiv.innerHTML = '<span class="role-badge">No roles found</span>';
+            }
+        });
+    </script>
+</body>
+</html> 
