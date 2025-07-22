@@ -13,6 +13,7 @@ import { AlertCircle, CheckCircle2, Clock, ShieldAlert, ShieldCheck, Users, LogO
 import Link from "next/link"
 import { getRecentLogs, getSecurityEvents } from "@/lib/audit-service"
 import { authLogger } from "@/lib/auth-logger"
+import { getCurrentUserRiskScore, initializeUserRisk, logUserActivity, type RiskData } from "@/lib/risk-service"
 
 export default function DashboardPage() {
   const router = useRouter()
@@ -21,6 +22,8 @@ export default function DashboardPage() {
   const [recentActivity, setRecentActivity] = useState<any[]>([])
   const [securityIncidents, setSecurityIncidents] = useState<any[]>([])
   const [activityLoading, setActivityLoading] = useState(true)
+  const [riskData, setRiskData] = useState<RiskData | null>(null)
+  const [riskLoading, setRiskLoading] = useState(true)
 
   useEffect(() => {
     const checkAuthAndLoadUser = async () => {
@@ -39,14 +42,27 @@ export default function DashboardPage() {
       })
       setLoading(false)
 
-      // Log successful dashboard access
+      // Log successful dashboard access and initialize risk score
       if (userInfo) {
+        // Initialize risk score on login
+        initializeUserRisk().catch(error => {
+          console.warn('Failed to initialize user risk:', error)
+        })
+
+        // Log dashboard access
+        logUserActivity('dashboard_access', '/dashboard').catch(error => {
+          console.warn('Failed to log dashboard access:', error)
+        })
+
         authLogger.logAuthEvent({
           action: 'dashboard_access',
           success: true
         }).catch(error => {
           console.warn('Failed to log dashboard access:', error)
         })
+
+        // Fetch current user's risk score
+        fetchUserRiskScore()
       }
     }
 
@@ -79,6 +95,19 @@ export default function DashboardPage() {
     }
   }
 
+  const fetchUserRiskScore = async () => {
+    try {
+      setRiskLoading(true)
+      const currentRisk = await getCurrentUserRiskScore()
+      setRiskData(currentRisk)
+    } catch (error) {
+      console.error('Error fetching user risk score:', error)
+      setRiskData(null)
+    } finally {
+      setRiskLoading(false)
+    }
+  }
+
   const handleLogout = () => {
     // Log logout event before logout
     authLogger.logLogout().finally(() => {
@@ -93,8 +122,9 @@ export default function DashboardPage() {
     })
   }
 
-  // Mock risk level based on user data
-  const riskLevel = user?.email?.includes('admin') ? 'low' : user?.email?.includes('test') ? 'high' : 'medium'
+  // Get real risk level and score from API
+  const riskLevel = riskData?.riskLevel || 'medium'
+  const riskScore = riskData?.riskScore || 30
 
   // Use real data from state
   const recentIncidents = securityIncidents.slice(0, 3)
@@ -210,20 +240,29 @@ export default function DashboardPage() {
                 />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">
-                  {riskLevel === "high" ? "75" : riskLevel === "medium" ? "55" : "25"}/100
-                </div>
-                <Progress
-                  value={riskLevel === "high" ? 75 : riskLevel === "medium" ? 55 : 25}
-                  className="mt-2"
-                />
-                <p className="text-xs text-muted-foreground mt-2">
-                  {riskLevel === "high"
-                    ? "High risk detected. Action required."
-                    : riskLevel === "medium"
-                      ? "Medium risk. Monitor closely."
-                      : "Low risk. No action needed."}
-                </p>
+                {riskLoading ? (
+                  <div className="flex items-center justify-center py-4">
+                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    <span className="text-sm">Loading...</span>
+                  </div>
+                ) : (
+                  <>
+                    <div className="text-2xl font-bold">
+                      {riskScore}/100
+                    </div>
+                    <Progress
+                      value={riskScore}
+                      className="mt-2"
+                    />
+                    <p className="text-xs text-muted-foreground mt-2">
+                      {riskLevel === "high"
+                        ? "High risk detected. Action required."
+                        : riskLevel === "medium"
+                          ? "Medium risk. Monitor closely."
+                          : "Low risk. No action needed."}
+                    </p>
+                  </>
+                )}
               </CardContent>
             </Card>
 

@@ -67,7 +67,7 @@ export default function ProfilePage() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     // Here you would typically send the updated profile to your backend
-    console.log("Updated profile:", formData)
+
     setIsEditing(false)
   }
 

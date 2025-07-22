@@ -42,12 +42,7 @@ export const authorize = (resource, action, options = {}) => {
 
       if (!authResult.allowed) {
         // Log unauthorized access attempt
-        console.warn('Unauthorized access attempt:', {
-          resource,
-          action,
-          context,
-          reason: authResult.error || 'Access denied by policy'
-        });
+
 
         return res.status(403).json({ 
           error: 'Access denied',
@@ -73,7 +68,7 @@ export const authorize = (resource, action, options = {}) => {
 
       next();
     } catch (error) {
-      console.error('Authorization middleware error:', error);
+
       res.status(500).json({ 
         error: 'Authorization service error',
         message: error.message
@@ -106,7 +101,7 @@ export const filterData = (resource) => {
         const filterResult = await opaClient.filterData(filterRequest);
         
         if (filterResult.error) {
-          console.warn('Data filtering error:', filterResult.error);
+
           return originalSend.call(this, data); // Return original data on error
         }
 
@@ -116,7 +111,7 @@ export const filterData = (resource) => {
 
       next();
     } catch (error) {
-      console.error('Data filtering middleware error:', error);
+
       next(); // Continue without filtering on error
     }
   };
@@ -161,44 +156,37 @@ export const requireRoles = (requiredRoles) => {
 
       next();
     } catch (error) {
-      console.error('Role middleware error:', error);
+
       res.status(500).json({ error: 'Authorization service error' });
     }
   };
 };
 
 /**
- * Get user risk score (mock implementation)
+ * Get user risk score using the risk service
  * @param {Object} req - Express request object
  * @returns {Promise<number>} Risk score (0-100)
  */
 async function getRiskScore(req) {
-  // In a real implementation, this would query your risk assessment service
-  // For now, return a mock score based on various factors
-  
-  const baseScore = 30;
-  const userAgent = req.headers['user-agent'] || '';
-  const ipAddress = req.ip;
-  
-  let riskScore = baseScore;
-  
-  // Increase risk for unusual user agents
-  if (!userAgent.includes('Chrome') && !userAgent.includes('Firefox') && !userAgent.includes('Safari')) {
-    riskScore += 20;
+  try {
+    // Import the risk service
+    const { getUserRiskScore } = await import('../services/risk-service.js');
+    
+    // Extract user ID from token if available
+    const token = req.headers.authorization?.split(' ')[1];
+    if (token) {
+      const decoded = jwt.decode(token);
+      if (decoded?.sub) {
+        return await getUserRiskScore(decoded.sub);
+      }
+    }
+    
+    // Fallback to default score of 30
+    return 30;
+  } catch (error) {
+
+    return 30; // Default risk score
   }
-  
-  // Increase risk for non-office IP ranges (simplified)
-  if (!ipAddress.startsWith('192.168.') && !ipAddress.startsWith('10.')) {
-    riskScore += 15;
-  }
-  
-  // Add time-based risk (higher risk outside business hours)
-  const hour = new Date().getHours();
-  if (hour < 9 || hour > 17) {
-    riskScore += 10;
-  }
-  
-  return Math.min(riskScore, 100);
 }
 
 /**
@@ -241,7 +229,7 @@ export const auditMiddleware = (req, res, next) => {
       authorized: res.statusCode < 400
     };
     
-    console.log('Audit Log:', JSON.stringify(auditLog));
+
     
     return originalSend.call(this, data);
   };

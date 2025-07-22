@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import { getAuditLogs, generateSampleAuditLogs } from "@/lib/audit-service"
-import type { AuditEventType, ResourceType } from "@/lib/db-schema"
+import type { HospitalAuditEventType, HospitalResourceType } from "@/lib/hospital-schema"
 
 export async function GET(request: Request) {
   try {

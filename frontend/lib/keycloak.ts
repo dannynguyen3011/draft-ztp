@@ -47,7 +47,7 @@ export class KeycloakAuth {
     // Get login URL with the same state
     const loginUrl = this.getLoginUrl(state)
     
-    console.log('Redirecting to Keycloak with state:', state)
+
     window.location.href = loginUrl
   }
 
@@ -57,10 +57,7 @@ export class KeycloakAuth {
       throw new Error('Token exchange can only be performed on client-side')
     }
 
-    console.log('Received state from Keycloak:', state)
-    
     const storedState = localStorage.getItem('keycloak_state')
-    console.log('Stored state in localStorage:', storedState)
     
     if (!storedState) {
       throw new Error('No stored state found. Please try logging in again.')
@@ -181,7 +178,7 @@ export class KeycloakAuth {
       params.append('id_token_hint', idToken)
     }
 
-    console.log('Performing Keycloak logout with redirect URI:', redirectUri)
+
     window.location.href = `${logoutUrl}?${params}`
   }
 
@@ -205,7 +202,7 @@ export class KeycloakAuth {
 
   // Simple logout (just redirect to main page)
   private simpleLogout(): void {
-    console.log('Performing simple logout')
+
     window.location.href = '/'
   }
 

@@ -1,15 +1,20 @@
 import { v4 as uuidv4 } from "uuid"
-import { type AuditLog, AuditEventType, ResourceType } from "./db-schema"
+import { type UserActivity, HospitalAuditEventType, HospitalResourceType } from "./hospital-schema"
+import { getUserActivities } from "./hospital-service"
 
 // API client for fetching real audit logs from backend
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3003';
 
 // Convert backend log format to frontend audit log format
 const convertBackendLogToAuditLog = (backendLog: any): AuditLog => {
+  // Ensure unique ID by combining MongoDB _id with timestamp if needed
+  const uniqueId = backendLog._id || backendLog.id || `log-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+  
   return {
-    id: backendLog._id || backendLog.id,
+    id: uniqueId,
     timestamp: new Date(backendLog.timestamp),
     user_id: backendLog.userId || backendLog.user_id,
+    username: backendLog.username,
     event_type: mapActionToEventType(backendLog.action),
     resource_type: mapActionToResourceType(backendLog.action),
     resource_id: backendLog.sessionId || null,
@@ -233,6 +238,10 @@ const realtimeAuditLogs: AuditLog[] = []
 type AuditEventListener = (log: AuditLog) => void
 const auditEventListeners: AuditEventListener[] = []
 
+// Polling for real-time updates
+let pollInterval: NodeJS.Timeout | null = null
+let lastPollTimestamp: Date | null = null
+
 // Interface for creating an audit log entry
 export interface CreateAuditLogParams {
   user_id?: string | null
@@ -290,14 +299,14 @@ export async function createAuditLog(params: CreateAuditLogParams): Promise<Audi
       realtimeAuditLogs.pop()
     }
 
-    console.log("Real-time audit log created:", id)
+
 
     // Notify listeners for real-time updates
     notifyAuditEventListeners(auditLog)
 
     return auditLog
   } catch (error) {
-    console.error("Error creating real-time audit log:", error)
+
     return null
   }
 }
@@ -308,20 +317,99 @@ function notifyAuditEventListeners(log: AuditLog) {
     try {
       listener(log)
     } catch (error) {
-      console.error("Error in audit event listener:", error)
+
     }
   })
+}
+
+// Poll for new logs from backend
+async function pollForNewLogs() {
+  if (auditEventListeners.length === 0) {
+    return // No listeners, skip polling
+  }
+
+  try {
+    // Get logs from the last minute or since last poll
+    const now = new Date()
+    const startTime = lastPollTimestamp || new Date(now.getTime() - 30000) // 30 seconds ago
+    
+    const queryParams = new URLSearchParams({
+      limit: '50',
+      startDate: startTime.toISOString(),
+    })
+
+    const response = await fetch(`${BACKEND_URL}/api/log?${queryParams.toString()}`)
+    
+    if (response.ok) {
+      const data = await response.json()
+      
+      if (data.success && data.logs) {
+        const newLogs = data.logs
+          .map(convertBackendLogToAuditLog)
+          .filter((log: AuditLog) => new Date(log.timestamp) > (lastPollTimestamp || new Date(0)))
+          .sort((a: AuditLog, b: AuditLog) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+
+        if (newLogs.length > 0) {
+
+          
+          // Notify listeners of new logs (in reverse chronological order)
+          newLogs.forEach((log: AuditLog) => {
+            notifyAuditEventListeners(log)
+          })
+        }
+
+        lastPollTimestamp = now
+      }
+    } else {
+
+    }
+  } catch (error) {
+
+  }
+}
+
+// Start polling for real-time updates
+function startPolling() {
+  if (pollInterval) {
+    return // Already polling
+  }
+  
+
+  lastPollTimestamp = new Date()
+  pollInterval = setInterval(pollForNewLogs, 3000) // Poll every 3 seconds
+  
+  // Do an immediate poll
+  pollForNewLogs()
+}
+
+// Stop polling for real-time updates
+function stopPolling() {
+  if (pollInterval) {
+
+    clearInterval(pollInterval)
+    pollInterval = null
+  }
 }
 
 // Register a listener for real-time audit log updates
 export function onAuditEvent(listener: AuditEventListener): () => void {
   auditEventListeners.push(listener)
 
+  // Start polling when first listener is added
+  if (auditEventListeners.length === 1) {
+    startPolling()
+  }
+
   // Return a function to unregister the listener
   return () => {
     const index = auditEventListeners.indexOf(listener)
     if (index !== -1) {
       auditEventListeners.splice(index, 1)
+    }
+
+    // Stop polling when no listeners remain
+    if (auditEventListeners.length === 0) {
+      stopPolling()
     }
   }
 }

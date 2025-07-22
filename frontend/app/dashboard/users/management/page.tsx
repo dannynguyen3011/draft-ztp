@@ -1,20 +1,43 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { AlertCircle, CheckCircle, Search, Shield, User, UserPlus } from "lucide-react"
+import { AlertCircle, CheckCircle, Search, Shield, User, UserPlus, RefreshCw } from "lucide-react"
 import Link from "next/link"
-import { users } from "@/lib/mock-data"
+import { getUsers, getHighRiskUsers, type User as UserType } from "@/lib/user-service"
 
 export default function UserManagementPage() {
   const [searchQuery, setSearchQuery] = useState("")
   const [roleFilter, setRoleFilter] = useState("all")
   const [statusFilter, setStatusFilter] = useState("all")
+  const [users, setUsers] = useState<UserType[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  // Fetch users from backend
+  const fetchUsers = async () => {
+    try {
+      setLoading(true)
+      setError(null)
+      const fetchedUsers = await getUsers()
+      setUsers(fetchedUsers)
+    } catch (err) {
+      setError('Failed to fetch users')
+      console.error('Error fetching users:', err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Load users on component mount
+  useEffect(() => {
+    fetchUsers()
+  }, [])
 
   // Filter users based on search query and filters
   const filteredUsers = users.filter((user) => {
@@ -35,6 +58,10 @@ export default function UserManagementPage() {
       <div className="flex items-center justify-between">
         <h2 className="text-3xl font-bold tracking-tight">User Management</h2>
         <div className="flex items-center space-x-2">
+          <Button variant="outline" onClick={fetchUsers} disabled={loading}>
+            <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
           <Button asChild>
             <Link href="/dashboard">
               <Shield className="mr-2 h-4 w-4" />
@@ -83,10 +110,21 @@ export default function UserManagementPage() {
         </Button>
       </div>
 
+      {error && (
+        <Card className="border-red-200 bg-red-50">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2 text-red-800">
+              <AlertCircle className="h-5 w-5" />
+              <p>{error}</p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       <Tabs defaultValue="all-users" className="space-y-4">
         <TabsList>
-          <TabsTrigger value="all-users">All Users</TabsTrigger>
-          <TabsTrigger value="high-risk">High Risk</TabsTrigger>
+          <TabsTrigger value="all-users">All Users ({users.length})</TabsTrigger>
+          <TabsTrigger value="high-risk">High Risk ({users.filter(u => u.riskLevel === 'high').length})</TabsTrigger>
           <TabsTrigger value="recent">Recent Activity</TabsTrigger>
         </TabsList>
 
@@ -106,7 +144,12 @@ export default function UserManagementPage() {
                   <div className="col-span-2">Actions</div>
                 </div>
                 <div className="divide-y">
-                  {filteredUsers.length > 0 ? (
+                  {loading ? (
+                    <div className="p-8 text-center">
+                      <RefreshCw className="h-8 w-8 animate-spin mx-auto mb-4 text-muted-foreground" />
+                      <p className="text-muted-foreground">Loading users...</p>
+                    </div>
+                  ) : filteredUsers.length > 0 ? (
                     filteredUsers.map((user) => (
                       <div key={user.id} className="grid grid-cols-12 gap-2 p-4 items-center">
                         <div className="col-span-4 flex items-center gap-3">
@@ -137,7 +180,7 @@ export default function UserManagementPage() {
                               user.riskLevel === "high"
                                 ? "destructive"
                                 : user.riskLevel === "medium"
-                                  ? "warning"
+                                  ? "secondary"
                                   : "outline"
                             }
                           >

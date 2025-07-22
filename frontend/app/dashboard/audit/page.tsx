@@ -20,13 +20,14 @@ import {
   PaginationPrevious,
 } from "@/components/ui/pagination"
 import { AlertCircle, CheckCircle, Clock, Filter, RefreshCw, Shield, User } from "lucide-react"
-import { AuditEventType, ResourceType } from "@/lib/db-schema"
+import { HospitalAuditEventType, HospitalResourceType } from "@/lib/hospital-schema"
 import { onAuditEvent } from "@/lib/audit-service"
 
 interface AuditLog {
   id: string
   timestamp: string | Date
   user_id: string | null
+  username?: string | null
   event_type: string
   resource_type: string
   resource_id: string | null
@@ -56,6 +57,8 @@ export default function AuditLogsPage() {
   const [totalLogs, setTotalLogs] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [realTimeEnabled, setRealTimeEnabled] = useState(true)
+  const [lastUpdateTime, setLastUpdateTime] = useState<Date | null>(null)
+  const [newLogCount, setNewLogCount] = useState(0)
 
   // Filter states
   const [filters, setFilters] = useState({
@@ -99,7 +102,11 @@ export default function AuditLogsPage() {
       const data = await response.json()
 
       if (data.logs && Array.isArray(data.logs)) {
-        setAuditLogs(data.logs)
+        // Sort logs by timestamp (newest first) to ensure proper order
+        const sortedLogs = data.logs.sort((a: AuditLog, b: AuditLog) => 
+          new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+        )
+        setAuditLogs(sortedLogs)
         setTotalPages(data.pages || 1)
         setTotalLogs(data.total || data.logs.length)
       } else {
@@ -175,14 +182,30 @@ export default function AuditLogsPage() {
 
     // Register for real-time audit log updates
     const unsubscribe = onAuditEvent((newLog) => {
+      setLastUpdateTime(new Date())
+      setNewLogCount((prev) => prev + 1)
+      
       // Update the audit logs list if we're on the first page
       if (currentPage === 1 && activeTab === "all") {
         setAuditLogs((prevLogs) => {
-          // Add the new log to the beginning and remove the last one if we're at the limit
-          const updatedLogs = [newLog, ...prevLogs]
-          if (updatedLogs.length > 20) {
-            updatedLogs.pop()
+          // Check if this log already exists (prevent duplicates)
+          const existingLogIndex = prevLogs.findIndex(log => log.id === newLog.id)
+          if (existingLogIndex !== -1) {
+            // If log exists, update it in place and re-sort
+            const updatedLogs = [...prevLogs]
+            updatedLogs[existingLogIndex] = newLog
+            return updatedLogs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
           }
+          
+          // Add new log and sort by timestamp (newest first)
+          const updatedLogs = [newLog, ...prevLogs]
+            .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+          
+          // Keep only the most recent 20 logs
+          if (updatedLogs.length > 20) {
+            return updatedLogs.slice(0, 20)
+          }
+          
           return updatedLogs
         })
         setTotalLogs((prev) => prev + 1)
@@ -191,15 +214,29 @@ export default function AuditLogsPage() {
       // Update security events if it's a security-related event
       if (
         activeTab === "security" &&
-        ((newLog.event_type === AuditEventType.AUTHENTICATION && newLog.status === "failure") ||
-          newLog.event_type === AuditEventType.SECURITY ||
+                ((newLog.event_type === HospitalAuditEventType.AUTHENTICATION && newLog.status === "failure") ||
+        newLog.event_type === HospitalAuditEventType.SECURITY_EVENT ||
           (newLog.risk_score !== null && newLog.risk_score > 70))
       ) {
         setSecurityEvents((prevEvents) => {
-          const updatedEvents = [newLog, ...prevEvents]
-          if (updatedEvents.length > 20) {
-            updatedEvents.pop()
+          // Check if this log already exists (prevent duplicates)
+          const existingLogIndex = prevEvents.findIndex(event => event.id === newLog.id)
+          if (existingLogIndex !== -1) {
+            // If log exists, update it in place and re-sort
+            const updatedEvents = [...prevEvents]
+            updatedEvents[existingLogIndex] = newLog
+            return updatedEvents.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
           }
+          
+          // Add new event and sort by timestamp (newest first)
+          const updatedEvents = [newLog, ...prevEvents]
+            .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+          
+          // Keep only the most recent 20 events
+          if (updatedEvents.length > 20) {
+            return updatedEvents.slice(0, 20)
+          }
+          
           return updatedEvents
         })
       }
@@ -213,43 +250,65 @@ export default function AuditLogsPage() {
 
   // Generate sample audit logs for fallback
   const generateSampleAuditLogs = (count: number): AuditLog[] => {
-    const eventTypes = Object.values(AuditEventType)
-    const resourceTypes = Object.values(ResourceType)
+      const eventTypes = Object.values(HospitalAuditEventType)
+  const resourceTypes = Object.values(HospitalResourceType)
     const statuses = ["success", "failure"] as const
-    const userIds = ["user-1", "user-2", "user-3", "user-4", null]
+    const sampleUsers = [
+      { id: "user-1", username: "huy" },
+      { id: "user-2", username: "duc" },
+      { id: "user-3", username: "admin" },
+      { id: "user-4", username: "manager1" },
+      { id: null, username: null }
+    ]
 
-    return Array.from({ length: count }, (_, i) => ({
-      id: `log-${i}`,
-      timestamp: new Date(Date.now() - Math.random() * 7 * 24 * 60 * 60 * 1000).toISOString(),
-      user_id: userIds[Math.floor(Math.random() * userIds.length)],
-      event_type: eventTypes[Math.floor(Math.random() * eventTypes.length)],
-      resource_type: resourceTypes[Math.floor(Math.random() * resourceTypes.length)],
-      resource_id: Math.random() > 0.3 ? `resource-${Math.floor(Math.random() * 10)}` : null,
-      action: ["login", "logout", "view", "update", "delete", "create"][Math.floor(Math.random() * 6)],
-      status: statuses[Math.floor(Math.random() * statuses.length)],
-      ip_address: `192.168.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}`,
-      user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-      details: { sample: "data" },
-      risk_score: Math.random() > 0.3 ? Math.floor(Math.random() * 100) : null,
-    }))
+    return Array.from({ length: count }, (_, i) => {
+      const user = sampleUsers[Math.floor(Math.random() * sampleUsers.length)]
+      return {
+        id: `log-${i}`,
+        timestamp: new Date(Date.now() - Math.random() * 7 * 24 * 60 * 60 * 1000).toISOString(),
+        user_id: user.id,
+        username: user.username,
+        event_type: eventTypes[Math.floor(Math.random() * eventTypes.length)],
+        resource_type: resourceTypes[Math.floor(Math.random() * resourceTypes.length)],
+        resource_id: Math.random() > 0.3 ? `resource-${Math.floor(Math.random() * 10)}` : null,
+        action: ["login", "logout", "view", "update", "delete", "create"][Math.floor(Math.random() * 6)],
+        status: statuses[Math.floor(Math.random() * statuses.length)],
+        ip_address: `192.168.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}`,
+        user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        details: { sample: "data", username: user.username },
+        risk_score: Math.random() > 0.3 ? Math.floor(Math.random() * 100) : null,
+      }
+    })
   }
 
   // Generate sample security events for fallback
   const generateSampleSecurityEvents = (count: number): AuditLog[] => {
-    return Array.from({ length: count }, (_, i) => ({
-      id: `security-${i}`,
-      timestamp: new Date(Date.now() - Math.random() * 7 * 24 * 60 * 60 * 1000).toISOString(),
-      user_id: ["user-1", "user-2", "user-3", "user-4", null][Math.floor(Math.random() * 5)],
-      event_type: [AuditEventType.AUTHENTICATION, AuditEventType.SECURITY][Math.floor(Math.random() * 2)],
-      resource_type: ResourceType.USER,
-      resource_id: Math.random() > 0.3 ? `resource-${Math.floor(Math.random() * 10)}` : null,
-      action: ["failed_login", "suspicious_activity", "brute_force_attempt"][Math.floor(Math.random() * 3)],
-      status: "failure",
-      ip_address: `192.168.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}`,
-      user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-      details: { reason: "suspicious_location" },
-      risk_score: 70 + Math.floor(Math.random() * 30),
-    }))
+    const sampleUsers = [
+      { id: "user-1", username: "huy" },
+      { id: "user-2", username: "duc" },
+      { id: "user-3", username: "admin" },
+      { id: "user-4", username: "manager1" },
+      { id: null, username: null }
+    ]
+
+    return Array.from({ length: count }, (_, i) => {
+      const user = sampleUsers[Math.floor(Math.random() * 5)]
+      return {
+        id: `security-${i}`,
+        timestamp: new Date(Date.now() - Math.random() * 7 * 24 * 60 * 60 * 1000).toISOString(),
+        user_id: user.id,
+        username: user.username,
+        event_type: [HospitalAuditEventType.AUTHENTICATION, HospitalAuditEventType.SECURITY_EVENT][Math.floor(Math.random() * 2)],
+        resource_type: HospitalResourceType.USER,
+        resource_id: Math.random() > 0.3 ? `resource-${Math.floor(Math.random() * 10)}` : null,
+        action: ["failed_login", "suspicious_activity", "brute_force_attempt"][Math.floor(Math.random() * 3)],
+        status: "failure",
+        ip_address: `192.168.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}`,
+        user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        details: { reason: "suspicious_location", username: user.username },
+        risk_score: 70 + Math.floor(Math.random() * 30),
+      }
+    })
   }
 
   const handleFilterChange = (key: string, value: string) => {
@@ -292,9 +351,9 @@ export default function AuditLogsPage() {
 
   const getEventTypeIcon = (eventType: string) => {
     switch (eventType) {
-      case AuditEventType.AUTHENTICATION:
+      case HospitalAuditEventType.AUTHENTICATION:
         return <User className="h-4 w-4" />
-      case AuditEventType.SECURITY:
+      case HospitalAuditEventType.SECURITY_EVENT:
         return <Shield className="h-4 w-4" />
       default:
         return <Clock className="h-4 w-4" />
@@ -322,7 +381,15 @@ export default function AuditLogsPage() {
             variant={realTimeEnabled ? "default" : "outline"}
             onClick={() => setRealTimeEnabled(!realTimeEnabled)}
           >
-            {realTimeEnabled ? "Real-time: ON" : "Real-time: OFF"}
+            <div className="flex items-center gap-2">
+              {realTimeEnabled && <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />}
+              {realTimeEnabled ? "Real-time: ON" : "Real-time: OFF"}
+              {realTimeEnabled && lastUpdateTime && (
+                <span className="text-xs opacity-75">
+                  (Last: {lastUpdateTime.toLocaleTimeString()})
+                </span>
+              )}
+            </div>
           </Button>
           <Button variant="outline" onClick={() => setShowFilters(!showFilters)}>
             <Filter className="mr-2 h-4 w-4" />
@@ -373,13 +440,13 @@ export default function AuditLogsPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All Events</SelectItem>
-                    <SelectItem value={AuditEventType.AUTHENTICATION}>Authentication</SelectItem>
-                    <SelectItem value={AuditEventType.AUTHORIZATION}>Authorization</SelectItem>
-                    <SelectItem value={AuditEventType.USER_MANAGEMENT}>User Management</SelectItem>
-                    <SelectItem value={AuditEventType.DATA_ACCESS}>Data Access</SelectItem>
-                    <SelectItem value={AuditEventType.SYSTEM}>System</SelectItem>
-                    <SelectItem value={AuditEventType.SECURITY}>Security</SelectItem>
-                    <SelectItem value={AuditEventType.MFA}>MFA</SelectItem>
+                    <SelectItem value={HospitalAuditEventType.AUTHENTICATION}>Authentication</SelectItem>
+                    <SelectItem value={HospitalAuditEventType.AUTHORIZATION}>Authorization</SelectItem>
+                    <SelectItem value={HospitalAuditEventType.USER_MANAGEMENT}>User Management</SelectItem>
+                    <SelectItem value={HospitalAuditEventType.DATA_ACCESS}>Data Access</SelectItem>
+                    <SelectItem value={HospitalAuditEventType.SYSTEM_ACCESS}>System</SelectItem>
+                    <SelectItem value={HospitalAuditEventType.SECURITY_EVENT}>Security</SelectItem>
+                    <SelectItem value={HospitalAuditEventType.PATIENT_RECORD_ACCESS}>Patient Records</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -395,11 +462,11 @@ export default function AuditLogsPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All Resources</SelectItem>
-                    <SelectItem value={ResourceType.USER}>User</SelectItem>
-                    <SelectItem value={ResourceType.MEETING}>Meeting</SelectItem>
-                    <SelectItem value={ResourceType.SYSTEM}>System</SelectItem>
-                    <SelectItem value={ResourceType.DOCUMENT}>Document</SelectItem>
-                    <SelectItem value={ResourceType.SETTING}>Setting</SelectItem>
+                    <SelectItem value={HospitalResourceType.USER}>User</SelectItem>
+                                          <SelectItem value={HospitalResourceType.PATIENT}>Patient</SelectItem>
+                      <SelectItem value={HospitalResourceType.MEDICAL_RECORD}>Medical Record</SelectItem>
+                      <SelectItem value={HospitalResourceType.DEPARTMENT}>Department</SelectItem>
+                      <SelectItem value={HospitalResourceType.SYSTEM}>System</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -461,7 +528,16 @@ export default function AuditLogsPage() {
               <CardTitle>Audit Log History</CardTitle>
               <CardDescription>
                 Showing {auditLogs.length} of {totalLogs} total logs • Page {currentPage} of {totalPages}
-                {realTimeEnabled && " • Real-time updates enabled"}
+                {realTimeEnabled && (
+                  <span>
+                    {" • Real-time updates enabled"}
+                    {newLogCount > 0 && (
+                      <span className="text-green-600 font-medium">
+                        {" • "}{newLogCount} new logs received
+                      </span>
+                    )}
+                  </span>
+                )}
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -470,6 +546,7 @@ export default function AuditLogsPage() {
                   <TableRow>
                     <TableHead>Timestamp</TableHead>
                     <TableHead>Event Type</TableHead>
+                    <TableHead>Name</TableHead>
                     <TableHead>User ID</TableHead>
                     <TableHead>Action</TableHead>
                     <TableHead>Resource</TableHead>
@@ -480,8 +557,8 @@ export default function AuditLogsPage() {
                 </TableHeader>
                 <TableBody>
                   {auditLogs.length > 0 ? (
-                    auditLogs.map((log) => (
-                      <TableRow key={log.id}>
+                    auditLogs.map((log, index) => (
+                      <TableRow key={`${log.id}-${new Date(log.timestamp).getTime()}-${index}`}>
                         <TableCell>{formatDate(log.timestamp)}</TableCell>
                         <TableCell>
                           <div className="flex items-center gap-1">
@@ -489,7 +566,15 @@ export default function AuditLogsPage() {
                             <span className="capitalize">{log.event_type}</span>
                           </div>
                         </TableCell>
-                        <TableCell>{log.user_id || "Anonymous"}</TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <User className="h-4 w-4 text-muted-foreground" />
+                            {log.username || log.details?.username || "Unknown User"}
+                          </div>
+                        </TableCell>
+                        <TableCell className="font-mono text-xs text-muted-foreground">
+                          {log.user_id ? log.user_id.substring(0, 8) + "..." : "Anonymous"}
+                        </TableCell>
                         <TableCell>{log.action}</TableCell>
                         <TableCell>
                           <span className="capitalize">{log.resource_type}</span>
@@ -526,7 +611,7 @@ export default function AuditLogsPage() {
                     ))
                   ) : (
                     <TableRow>
-                      <TableCell colSpan={8} className="text-center py-4">
+                      <TableCell colSpan={9} className="text-center py-4">
                         No audit logs found
                       </TableCell>
                     </TableRow>
@@ -597,8 +682,8 @@ export default function AuditLogsPage() {
                 </TableHeader>
                 <TableBody>
                   {securityEvents.length > 0 ? (
-                    securityEvents.map((event) => (
-                      <TableRow key={event.id}>
+                    securityEvents.map((event, index) => (
+                      <TableRow key={`security-${event.id}-${new Date(event.timestamp).getTime()}-${index}`}>
                         <TableCell>{formatDate(event.timestamp)}</TableCell>
                         <TableCell>
                           <div className="flex items-center gap-1">

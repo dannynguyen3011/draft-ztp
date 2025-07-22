@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useAuth } from "@/lib/useAuth"
+import { getRiskSummary, type RiskSummary } from "@/lib/risk-service"
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart"
 import { XAxis, YAxis, CartesianGrid, ResponsiveContainer, BarChart, Bar, Cell } from "recharts"
 import { Shield, AlertTriangle, CheckCircle } from "lucide-react"
@@ -34,64 +35,31 @@ export default function RiskScoresDashboard() {
     const fetchRiskScores = async () => {
       try {
         setLoading(true)
-        // In a real app, this would fetch from your API
-        // For demo purposes, we'll use sample data
-
-        // Simulate API call
-        await new Promise((resolve) => setTimeout(resolve, 1000))
-
-        // Sample risk scores data
-        const sampleRiskScores = [
-          {
-            id: "risk-1",
-            user_id: "user-1",
-            username: "john.manager",
-            score: 25,
-            risk_level: "low",
-            factors: ["regular login pattern", "known device", "known location"],
-            timestamp: "2023-04-15T10:30:00Z",
-          },
-          {
-            id: "risk-2",
-            user_id: "user-2",
-            username: "sarah.manager",
-            score: 35,
-            risk_level: "low",
-            factors: ["regular login pattern", "known device", "unusual time"],
-            timestamp: "2023-04-10T22:15:00Z",
-          },
-          {
-            id: "risk-3",
-            user_id: "user-3",
-            username: "mike.member",
-            score: 55,
-            risk_level: "medium",
-            factors: ["new device", "known location", "unusual time"],
-            timestamp: "2023-04-12T03:45:00Z",
-          },
-          {
-            id: "risk-4",
-            user_id: "user-4",
-            username: "lisa.member",
-            score: 30,
-            risk_level: "low",
-            factors: ["regular login pattern", "known device", "known location"],
-            timestamp: "2023-04-14T14:20:00Z",
-          },
-          {
-            id: "risk-5",
-            user_id: "user-5",
-            username: "alex.member",
-            score: 75,
-            risk_level: "high",
-            factors: ["new device", "new location", "unusual time", "multiple failed attempts"],
-            timestamp: "2023-04-13T01:10:00Z",
-          },
-        ]
-
-        setRiskScores(sampleRiskScores)
+        
+        // Fetch real risk summary from API
+        const riskSummary = await getRiskSummary()
+        
+        if (riskSummary && riskSummary.users) {
+          // Convert backend format to frontend format
+          const formattedRiskScores = riskSummary.users.map((user) => ({
+            id: `risk-${user.userId}`,
+            user_id: user.userId,
+            username: user.username,
+            score: user.riskScore,
+            risk_level: user.riskScore >= 70 ? "high" as const : user.riskScore >= 40 ? "medium" as const : "low" as const,
+            factors: ["Based on recent activity"], // Simplified for now
+            timestamp: user.lastActivity,
+          }))
+          
+          setRiskScores(formattedRiskScores)
+        } else {
+          // Fallback to empty array if no data
+          setRiskScores([])
+        }
       } catch (error) {
         console.error("Error fetching risk scores:", error)
+        // Fallback to empty array on error
+        setRiskScores([])
       } finally {
         setLoading(false)
       }

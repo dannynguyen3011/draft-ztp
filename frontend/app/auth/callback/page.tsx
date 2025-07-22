@@ -23,12 +23,7 @@ export default function CallbackPage() {
         const error = searchParams.get('error')
         const errorDescription = searchParams.get('error_description')
 
-        console.log('Callback URL params:', {
-          code: code ? 'present' : 'missing',
-          state: state ? state : 'missing',
-          error: error,
-          errorDescription: errorDescription
-        })
+
 
         // Check for Keycloak errors first
         if (error) {
@@ -52,7 +47,7 @@ export default function CallbackPage() {
         const userInfo = await keycloakAuth.getUserInfo()
         localStorage.setItem('user_info', JSON.stringify(userInfo))
         
-        console.log('Authentication successful:', userInfo)
+
         
         // Log successful login to MongoDB
         try {
@@ -69,7 +64,7 @@ export default function CallbackPage() {
         }, 2000)
 
       } catch (error) {
-        console.error('Callback error:', error)
+
         const errorMessage = error instanceof Error ? error.message : 'Authentication failed'
         
         // Log failed login attempt

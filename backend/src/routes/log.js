@@ -15,6 +15,7 @@ const logSchema = new mongoose.Schema({
   action: String,
   sessionId: String,
   riskLevel: String,
+  riskScore: { type: Number, min: 0, max: 100, default: 30 },
   success: { type: Boolean, default: true },
   metadata: {
     realm: String,
@@ -66,14 +67,7 @@ router.post('/', async (req, res) => {
 
     await logEntry.save();
     
-    console.log("Authentication log recorded:", {
-      username,
-      userId,
-      action,
-      timestamp: new Date().toISOString(),
-      roles,
-      success
-    });
+
 
     res.status(200).json({ 
       success: true, 
@@ -82,7 +76,7 @@ router.post('/', async (req, res) => {
     });
 
   } catch (err) {
-    console.error('Error logging authentication data:', err);
+
     res.status(500).json({ 
       success: false, 
       error: 'Error logging data',
@@ -133,7 +127,7 @@ router.get('/', async (req, res) => {
     });
 
   } catch (err) {
-    console.error('Error retrieving logs:', err);
+
     res.status(500).json({ 
       success: false, 
       error: 'Error retrieving logs',
@@ -176,10 +170,129 @@ router.get('/user/:userId', async (req, res) => {
     });
 
   } catch (err) {
-    console.error('Error getting user activity summary:', err);
+
     res.status(500).json({ 
       success: false, 
       error: 'Error retrieving user activity',
+      message: err.message 
+    });
+  }
+});
+
+// Endpoint to get all unique users from logs
+router.get('/users', async (req, res) => {
+  try {
+    // Get unique users from logs using MongoDB aggregation
+    const users = await Log.aggregate([
+      {
+        $match: {
+          username: { $exists: true, $ne: null },
+          userId: { $exists: true, $ne: null }
+        }
+      },
+      {
+        $group: {
+          _id: '$userId',
+          username: { $first: '$username' },
+          email: { $first: '$email' },
+          roles: { $first: '$roles' },
+          lastLogin: { $max: '$timestamp' },
+          totalLogins: {
+            $sum: {
+              $cond: [
+                { $and: [{ $eq: ['$action', 'login'] }, { $eq: ['$success', true] }] },
+                1,
+                0
+              ]
+            }
+          },
+          failedLogins: {
+            $sum: {
+              $cond: [
+                { $and: [{ $eq: ['$action', 'login'] }, { $eq: ['$success', false] }] },
+                1,
+                0
+              ]
+            }
+          },
+          averageRiskScore: { 
+            $avg: { 
+              $cond: [
+                { $ne: ['$riskScore', null] },
+                '$riskScore',
+                { $cond: [{ $eq: ['$riskLevel', 'low'] }, 25, { $cond: [{ $eq: ['$riskLevel', 'medium'] }, 55, { $cond: [{ $eq: ['$riskLevel', 'high'] }, 75, 30] }] }] }
+              ]
+            }
+          },
+          recentActivities: { $push: { action: '$action', timestamp: '$timestamp', success: '$success' } }
+        }
+      },
+      {
+        $project: {
+          _id: 0,
+          id: '$_id',
+          userId: '$_id',
+          username: 1,
+          email: 1,
+          roles: 1,
+          lastLogin: 1,
+          totalLogins: 1,
+          failedLogins: 1,
+          averageRiskScore: { 
+            $round: [
+              { $ifNull: ['$averageRiskScore', 30] }, 
+              0
+            ] 
+          },
+          status: {
+            $cond: [
+              { $gte: ['$lastLogin', { $subtract: [new Date(), 7 * 24 * 60 * 60 * 1000] }] },
+              'active',
+              'inactive'
+            ]
+          },
+          riskLevel: {
+            $cond: [
+              { $gte: ['$averageRiskScore', 70] },
+              'high',
+              { $cond: [{ $gte: ['$averageRiskScore', 40] }, 'medium', 'low'] }
+            ]
+          },
+          loginSuccessRate: {
+            $cond: [
+              { $gt: [{ $add: ['$totalLogins', '$failedLogins'] }, 0] },
+              {
+                $round: [
+                  {
+                    $multiply: [
+                      { $divide: ['$totalLogins', { $add: ['$totalLogins', '$failedLogins'] }] },
+                      100
+                    ]
+                  },
+                  0
+                ]
+              },
+              100
+            ]
+          }
+        }
+      },
+      {
+        $sort: { lastLogin: -1 }
+      }
+    ]);
+
+    res.json({
+      success: true,
+      users,
+      total: users.length
+    });
+
+  } catch (err) {
+    console.error('Error retrieving users:', err);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Error retrieving users',
       message: err.message 
     });
   }

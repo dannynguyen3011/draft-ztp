@@ -13,9 +13,12 @@ services:
     command: start-dev
     volumes:
       - ./demo-realm.json:/opt/keycloak/data/import/demo-realm.json
+    networks:
+      - zerotrust-network
+    restart: unless-stopped
     
   opa:
-    image: openpolicyagent/opa:latest-envoy
+    image: openpolicyagent/opa:latest
     container_name: zerotrust-opa
     ports:
       - "8181:8181"
@@ -28,25 +31,55 @@ services:
     volumes:
       - ./opa/policies:/policies
       - ./opa/config:/config
-      - ./opa/data:/data
     environment:
-      - OPA_LOG_LEVEL=debug
+      - OPA_LOG_LEVEL=info
     networks:
       - zerotrust-network
     restart: unless-stopped
 
-  postgres:
-    image: postgres:15
-    container_name: zerotrust-postgres
+  # Hospital Analytics Backend
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: hospital-admin-backend
     environment:
-      - POSTGRES_DB=zerotrust
-      - POSTGRES_USER=admin
-      - POSTGRES_PASSWORD=admin
+      - NODE_ENV=production
+      - PORT=3003
+      - MONGO_URI=mongodb+srv://vqh04092004:admin@cluster0.nnhndae.mongodb.net/hospital_analytics?retryWrites=true&w=majority&ssl=true&authSource=admin
+      - KEYCLOAK_URL=http://keycloak:8080
+      - KEYCLOAK_REALM=demo
+      - KEYCLOAK_CLIENT_ID=demo-client
+      - FRONTEND_URL=http://localhost:3000
     ports:
-      - "5433:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+      - "3003:3003"
+    depends_on:
+      - keycloak
+      - opa
+    networks:
+      - zerotrust-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3003/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Hospital Analytics Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: hospital-admin-frontend
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_KEYCLOAK_URL=http://localhost:8080
+      - NEXT_PUBLIC_KEYCLOAK_REALM=demo
+      - NEXT_PUBLIC_KEYCLOAK_CLIENT_ID=demo-client
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
     networks:
       - zerotrust-network
     restart: unless-stopped
@@ -55,5 +88,5 @@ networks:
   zerotrust-network:
     driver: bridge
 
-volumes:
-  postgres_data: 
+# Note: MongoDB volumes removed since we're using Hospital MongoDB Atlas
+# The hospital database is hosted on MongoDB Atlas and accessed remotely 

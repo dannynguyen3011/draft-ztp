@@ -7,27 +7,32 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
-import { Shield, AlertTriangle, CheckCircle, Clock, ArrowDownCircle, ArrowUpCircle, Loader2, Lock } from "lucide-react"
+import { Shield, AlertTriangle, CheckCircle, Clock, ArrowDownCircle, ArrowUpCircle, Loader2, Lock, RefreshCw } from "lucide-react"
 import { AuthorizedComponent } from "@/components/AuthorizedComponent"
-
-interface UserStatus {
-  id: string
-  username: string
-  email: string
-  role: string
-  lastLogin: string
-  riskScore: number
-  riskLevel: "low" | "medium" | "high"
-  status: "active" | "inactive" | "locked"
-  loginAttempts: number
-  successfulLogins: number
-}
+import { getUsers, getUserStats, type User } from "@/lib/user-service"
 
 export default function UsersPage() {
   const router = useRouter()
   const { user, isLoading } = useAuth()
-  const [users, setUsers] = useState<UserStatus[]>([])
+  const [users, setUsers] = useState<User[]>([])
   const [loading, setLoading] = useState(true)
+  const [stats, setStats] = useState({ lowRisk: 0, mediumRisk: 0, highRisk: 0 })
+
+  const fetchUsers = async () => {
+    try {
+      setLoading(true)
+      // Fetch real users from backend
+      const realUsers = await getUsers()
+      const userStats = await getUserStats()
+      
+      setUsers(realUsers)
+      setStats(userStats)
+    } catch (error) {
+      console.error("Error fetching users:", error)
+    } finally {
+      setLoading(false)
+    }
+  }
 
   useEffect(() => {
     if (!isLoading && !user) {
@@ -37,87 +42,6 @@ export default function UsersPage() {
 
     // For demo purposes, we'll allow all authenticated users to view this page
     // In a real app, you'd check roles from Keycloak token
-
-    const fetchUsers = async () => {
-      try {
-        setLoading(true)
-        // In a real app, this would fetch from your API
-        // For demo purposes, we'll use sample data
-
-        // Simulate API call
-        await new Promise((resolve) => setTimeout(resolve, 1000))
-
-        // Sample user data
-        const sampleUsers: UserStatus[] = [
-          {
-            id: "user-1",
-            username: "john.manager",
-            email: "john.manager@example.com",
-            role: "manager",
-            lastLogin: "2023-04-15T10:30:00Z",
-            riskScore: 25,
-            riskLevel: "low",
-            status: "active",
-            loginAttempts: 5,
-            successfulLogins: 5,
-          },
-          {
-            id: "user-2",
-            username: "sarah.manager",
-            email: "sarah.manager@example.com",
-            role: "manager",
-            lastLogin: "2023-04-10T22:15:00Z",
-            riskScore: 35,
-            riskLevel: "low",
-            status: "active",
-            loginAttempts: 8,
-            successfulLogins: 7,
-          },
-          {
-            id: "user-3",
-            username: "mike.member",
-            email: "mike.member@example.com",
-            role: "member",
-            lastLogin: "2023-04-12T03:45:00Z",
-            riskScore: 55,
-            riskLevel: "medium",
-            status: "active",
-            loginAttempts: 12,
-            successfulLogins: 10,
-          },
-          {
-            id: "user-4",
-            username: "lisa.member",
-            email: "lisa.member@example.com",
-            role: "member",
-            lastLogin: "2023-04-14T14:20:00Z",
-            riskScore: 30,
-            riskLevel: "low",
-            status: "active",
-            loginAttempts: 6,
-            successfulLogins: 6,
-          },
-          {
-            id: "user-5",
-            username: "alex.member",
-            email: "alex.member@example.com",
-            role: "member",
-            lastLogin: "2023-04-13T01:10:00Z",
-            riskScore: 75,
-            riskLevel: "high",
-            status: "locked",
-            loginAttempts: 15,
-            successfulLogins: 10,
-          },
-        ]
-
-        setUsers(sampleUsers)
-      } catch (error) {
-        console.error("Error fetching users:", error)
-      } finally {
-        setLoading(false)
-      }
-    }
 
     if (user) {
       fetchUsers()
@@ -160,10 +84,8 @@ export default function UsersPage() {
     }
   }
 
-  const getLoginSuccessRate = (user: UserStatus) => {
-    if (user.loginAttempts === 0) return "N/A"
-    const rate = (user.successfulLogins / user.loginAttempts) * 100
-    return `${rate.toFixed(0)}%`
+  const getLoginSuccessRate = (user: User) => {
+    return `${user.loginSuccessRate}%`
   }
 
   return (
@@ -194,7 +116,13 @@ export default function UsersPage() {
     <div className="container py-8">
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-2xl font-bold">User Risk Management</h1>
-        <Button onClick={() => router.push("/dashboard")}>Back to Dashboard</Button>
+        <div className="flex items-center space-x-2">
+          <Button variant="outline" onClick={fetchUsers} disabled={loading}>
+            <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
+          <Button onClick={() => router.push("/dashboard")}>Back to Dashboard</Button>
+        </div>
       </div>
 
       <Card className="mb-6">
@@ -301,17 +229,17 @@ export default function UsersPage() {
                     <div className="flex flex-col">
                       <span>{getLoginSuccessRate(user)}</span>
                       <span className="text-xs text-muted-foreground">
-                        {user.successfulLogins}/{user.loginAttempts}
+                        {user.totalLogins}/{user.totalLogins + user.failedLogins}
                       </span>
                     </div>
                   </TableCell>
                   <TableCell>
-                    {user.successfulLogins >= 3 ? (
+                    {user.loginSuccessRate >= 90 ? (
                       <div className="flex items-center text-green-600">
                         <ArrowDownCircle className="mr-1 h-4 w-4" />
                         Decreasing
                       </div>
-                    ) : user.loginAttempts > user.successfulLogins + 2 ? (
+                    ) : user.loginSuccessRate < 70 ? (
                       <div className="flex items-center text-red-600">
                         <ArrowUpCircle className="mr-1 h-4 w-4" />
                         Increasing

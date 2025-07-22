@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { usePathname } from 'next/navigation'
 import { authLogger } from '@/lib/auth-logger'
 import { keycloakAuth } from '@/lib/keycloak'
+import { logUserActivity } from '@/lib/risk-service'
 
 // Map routes to friendly names
 const routeNames: Record<string, string> = {
@@ -89,7 +90,17 @@ export const usePageTracking = () => {
     const category = getPageCategory(pathname)
     const riskLevel = getPageRiskLevel(pathname)
 
-    // Log page access
+    // Log page access with risk service (respects admin/manager privileges)
+    logUserActivity('page_access', pathname, {
+      page: pageName,
+      category: category,
+      riskLevel: riskLevel,
+      referrer: document.referrer || 'direct'
+    }).catch(error => {
+      console.warn('Failed to log page access with risk service:', error)
+    })
+
+    // Also log with auth logger for audit trail
     authLogger.logAuthEvent({
       action: 'page_access',
       success: true,
@@ -108,6 +119,16 @@ export const usePageTracking = () => {
 
     // Log additional details for sensitive pages
     if (riskLevel === 'high') {
+      // Log sensitive page access with risk service
+      logUserActivity('sensitive_page_access', pathname, {
+        page: pageName,
+        securityLevel: 'high_privilege_required',
+        accessTime: new Date().toISOString()
+      }).catch(error => {
+        console.warn('Failed to log sensitive page access with risk service:', error)
+      })
+
+      // Also log with auth logger
       authLogger.logAuthEvent({
         action: 'sensitive_page_access',
         success: true,

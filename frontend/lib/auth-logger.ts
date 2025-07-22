@@ -114,7 +114,7 @@ class AuthLogger {
       return result;
 
     } catch (error) {
-      console.error('❌ Failed to log authentication event:', error);
+
       // Don't throw error to avoid breaking the authentication flow
       return null;
     }

@@ -18,6 +18,7 @@ import {
   AlertTriangle,
   User,
   LogOut,
+  Briefcase,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
@@ -75,6 +76,13 @@ export function TopNavbar() {
     keycloakAuth.logout()
   }
 
+  // Helper function to check if user is employee
+  const isEmployee = () => {
+    if (!user) return false
+    const userRoles = keycloakAuth.getUserRoles()
+    return userRoles.includes('employee') || userRoles.includes('member')
+  }
+
   // Don't render during SSR
   if (!mounted) {
     return null
@@ -106,6 +114,17 @@ export function TopNavbar() {
                   Dashboard
                 </Link>
               </AuthorizedComponent>
+
+              {/* Work - Only employees */}
+              {isEmployee() && (
+                <Link
+                  href="/dashboard/work"
+                  className="flex items-center px-3 py-2 text-sm font-medium text-gray-700 hover:text-blue-600 hover:bg-gray-50 rounded-md transition-colors"
+                >
+                  <Briefcase className="w-4 h-4 mr-2" />
+                  Work
+                </Link>
+              )}
 
               {/* Analytics - Only managers and admins */}
               <AuthorizedComponent resource="analytics" action="read" showLoader={false}>
@@ -237,6 +256,18 @@ export function TopNavbar() {
                   Dashboard
                 </Link>
               </AuthorizedComponent>
+
+              {/* Work - Only employees */}
+              {isEmployee() && (
+                <Link
+                  href="/dashboard/work"
+                  className="flex items-center px-3 py-2 text-sm font-medium text-gray-700 hover:text-blue-600 hover:bg-gray-50 rounded-md"
+                  onClick={() => setIsMenuOpen(false)}
+                >
+                  <Briefcase className="w-4 h-4 mr-2" />
+                  Work
+                </Link>
+              )}
 
               {/* Analytics - Only managers and admins */}
               <AuthorizedComponent resource="analytics" action="read" showLoader={false}>
