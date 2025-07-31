@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { usePathname } from 'next/navigation'
 import { authLogger } from '@/lib/auth-logger'
-import { keycloakAuth } from '@/lib/keycloak'
+import { auth } from '@/lib/auth'
 import { logUserActivity } from '@/lib/risk-service'
 
 // Map routes to friendly names
@@ -75,7 +75,7 @@ export const usePageTracking = () => {
 
   useEffect(() => {
     // Only track if user is authenticated
-    if (!keycloakAuth.isAuthenticated()) {
+    if (!auth.isAuthenticated()) {
       return
     }
 

@@ -6,7 +6,7 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import mongoose from 'mongoose';
-import { setupAuth, protect } from './middleware/auth.mjs';
+import { simpleAuth, protect, protectWithRoles } from './middleware/auth.js';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import logRouter from './routes/log.js';
@@ -49,10 +49,11 @@ const port = process.env.PORT || 3003;
 
 
 
-// Middleware - Allow both ports 3000 and 3002 for development
+// Middleware - Allow both frontend ports for development
 const allowedOrigins = [
-  process.env.FRONTEND_URL || 'http://localhost:3000',
-  'http://localhost:3000',
+  process.env.FRONTEND_URL || 'http://localhost:3001',
+  'http://localhost:3000', // Hospital web app
+  'http://localhost:3001', // Admin console
   'http://localhost:3002'
 ];
 
@@ -62,8 +63,8 @@ app.use(cors({
 }));
 app.use(express.json());
 
-// Initialize Keycloak
-const keycloak = setupAuth(app);
+// Use simple authentication middleware
+app.use(simpleAuth);
 
 // Routes
 app.use('/api/log', logRouter);
@@ -72,10 +73,10 @@ app.use('/api/risk', riskRouter);
 app.use('/api/hospital', hospitalRouter); // New hospital routes
 
 // Protected route example
-app.get('/api/protected', protect(keycloak), (req, res) => {
+app.get('/api/protected', protect(), (req, res) => {
   res.json({ 
     message: 'This is a protected route', 
-    user: req.kauth.grant.access_token.content 
+    user: { username: 'admin', role: 'admin' } 
   });
 });
 

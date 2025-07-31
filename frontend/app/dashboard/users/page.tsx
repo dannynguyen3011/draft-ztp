@@ -1,260 +1,328 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import { useRouter } from "next/navigation"
-import { useAuth } from "@/lib/useAuth"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
+import { Input } from "@/components/ui/input"
 import { Shield, AlertTriangle, CheckCircle, Clock, ArrowDownCircle, ArrowUpCircle, Loader2, Lock, RefreshCw } from "lucide-react"
-import { AuthorizedComponent } from "@/components/AuthorizedComponent"
 import { getUsers, getUserStats, type User } from "@/lib/user-service"
 
 export default function UsersPage() {
-  const router = useRouter()
-  const { user, isLoading } = useAuth()
   const [users, setUsers] = useState<User[]>([])
+  const [stats, setStats] = useState({
+    total: 0,
+    active: 0,
+    inactive: 0,
+    highRisk: 0
+  })
   const [loading, setLoading] = useState(true)
-  const [stats, setStats] = useState({ lowRisk: 0, mediumRisk: 0, highRisk: 0 })
+  const [searchTerm, setSearchTerm] = useState("")
+  const [sortField, setSortField] = useState<keyof User>('name')
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc')
 
-  const fetchUsers = async () => {
+  useEffect(() => {
+    loadData()
+  }, [])
+
+  const loadData = async () => {
     try {
       setLoading(true)
-      // Fetch real users from backend
-      const realUsers = await getUsers()
-      const userStats = await getUserStats()
-      
-      setUsers(realUsers)
-      setStats(userStats)
+      const [usersData, statsData] = await Promise.all([
+        getUsers(),
+        getUserStats()
+      ])
+      setUsers(usersData)
+      setStats(statsData)
     } catch (error) {
-      console.error("Error fetching users:", error)
+      console.error('Error loading user data:', error)
     } finally {
       setLoading(false)
     }
   }
 
-  useEffect(() => {
-    if (!isLoading && !user) {
-      router.push("/login")
-      return
-    }
-
-    // For demo purposes, we'll allow all authenticated users to view this page
-    // In a real app, you'd check roles from Keycloak token
-
-    if (user) {
-      fetchUsers()
-    }
-  }, [user, isLoading, router])
-
-  if (loading) {
-    return (
-      <div className="flex h-screen items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin mr-2" />
-        <p className="text-lg">Loading user data...</p>
-      </div>
+  // Filter and sort users
+  const filteredUsers = users
+    .filter(user => 
+      user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      user.department.toLowerCase().includes(searchTerm.toLowerCase())
     )
-  }
+    .sort((a, b) => {
+      const aValue = a[sortField]
+      const bValue = b[sortField]
+      
+      if (typeof aValue === 'string' && typeof bValue === 'string') {
+        return sortDirection === 'asc' 
+          ? aValue.localeCompare(bValue)
+          : bValue.localeCompare(aValue)
+      }
+      
+      if (typeof aValue === 'number' && typeof bValue === 'number') {
+        return sortDirection === 'asc' 
+          ? aValue - bValue
+          : bValue - aValue
+      }
+      
+      return 0
+    })
 
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString)
-    return date.toLocaleDateString() + " " + date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+  const handleSort = (field: keyof User) => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortField(field)
+      setSortDirection('asc')
+    }
   }
 
   const getRiskBadgeVariant = (riskLevel: string) => {
     switch (riskLevel) {
-      case "high":
-        return "destructive"
-      case "medium":
-        return "secondary"
-      default:
-        return "default"
+      case 'high': return 'destructive'
+      case 'medium': return 'secondary'
+      case 'low': return 'outline'
+      default: return 'outline'
     }
   }
 
-  const getStatusBadgeVariant = (status: string) => {
+  const getStatusIcon = (status: string) => {
     switch (status) {
-      case "locked":
-        return "destructive"
-      case "inactive":
-        return "secondary"
-      default:
-        return "outline"
+      case 'active': return <CheckCircle className="h-4 w-4 text-green-500" />
+      case 'inactive': return <Clock className="h-4 w-4 text-gray-500" />
+      case 'suspended': return <AlertTriangle className="h-4 w-4 text-red-500" />
+      default: return <Clock className="h-4 w-4 text-gray-500" />
     }
   }
 
-  const getLoginSuccessRate = (user: User) => {
-    return `${user.loginSuccessRate}%`
+  if (loading) {
+  return (
+      <div className="flex-1 space-y-4 p-4 md:p-8 pt-6">
+        <div className="flex items-center justify-center min-h-[400px]">
+          <div className="text-center">
+            <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" />
+            <p>Loading hospital users...</p>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   return (
-    <AuthorizedComponent 
-      resource="users" 
-      action="read"
-      fallback={
-        <div className="flex flex-col items-center justify-center min-h-[400px] p-8">
-          <div className="text-center space-y-4">
-            <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto">
-              <Lock className="w-8 h-8 text-red-600" />
-            </div>
-            <h2 className="text-2xl font-semibold text-gray-900">Access Denied</h2>
-            <p className="text-gray-600 max-w-md">
-              You don't have permission to access User Management. Only managers and administrators can view this page.
-            </p>
-            <Button 
-              variant="outline" 
-              onClick={() => router.push("/dashboard")}
-              className="mt-4"
-            >
-              Return to Dashboard
-            </Button>
-          </div>
-        </div>
-      }
-    >
-    <div className="container py-8">
-      <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-bold">User Risk Management</h1>
+    <div className="flex-1 space-y-4 p-4 md:p-8 pt-6">
+      <div className="flex items-center justify-between space-y-2">
+        <h2 className="text-3xl font-bold tracking-tight">Hospital Users</h2>
         <div className="flex items-center space-x-2">
-          <Button variant="outline" onClick={fetchUsers} disabled={loading}>
-            <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+          <Button onClick={loadData} variant="outline" size="sm">
+            <RefreshCw className="h-4 w-4 mr-2" />
             Refresh
           </Button>
-          <Button onClick={() => router.push("/dashboard")}>Back to Dashboard</Button>
         </div>
       </div>
 
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle>User Risk Overview</CardTitle>
-          <CardDescription>Monitor and manage user risk levels across your organization</CardDescription>
+      {/* Statistics Cards */}
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Total Users</CardTitle>
+            <Shield className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{stats.total}</div>
+            <p className="text-xs text-muted-foreground">
+              Hospital staff members
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Active Users</CardTitle>
+            <CheckCircle className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{stats.active}</div>
+            <p className="text-xs text-muted-foreground">
+              Currently online
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Inactive Users</CardTitle>
+            <Clock className="h-4 w-4 text-muted-foreground" />
         </CardHeader>
         <CardContent>
-          <div className="grid gap-6 md:grid-cols-3">
-            <div className="flex items-center gap-4">
-              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-green-100">
-                <CheckCircle className="h-6 w-6 text-green-600" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Low Risk Users</p>
-                <p className="text-2xl font-bold">{users.filter((u) => u.riskLevel === "low").length}</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-4">
-              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-amber-100">
-                <AlertTriangle className="h-6 w-6 text-amber-600" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Medium Risk Users</p>
-                <p className="text-2xl font-bold">{users.filter((u) => u.riskLevel === "medium").length}</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-4">
-              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-red-100">
-                <Shield className="h-6 w-6 text-red-600" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">High Risk Users</p>
-                <p className="text-2xl font-bold">{users.filter((u) => u.riskLevel === "high").length}</p>
-              </div>
-            </div>
-          </div>
+            <div className="text-2xl font-bold">{stats.inactive}</div>
+            <p className="text-xs text-muted-foreground">
+              Not active recently
+            </p>
         </CardContent>
       </Card>
 
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">High Risk Users</CardTitle>
+            <AlertTriangle className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{stats.highRisk}</div>
+            <p className="text-xs text-muted-foreground">
+              Requiring attention
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Search and Filters */}
       <Card>
         <CardHeader>
-          <CardTitle>User Status Table</CardTitle>
-          <CardDescription>Detailed view of all users and their current risk status</CardDescription>
+          <CardTitle>User Directory</CardTitle>
+          <CardDescription>
+            Monitor and manage hospital staff user accounts
+          </CardDescription>
         </CardHeader>
         <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Username</TableHead>
-                <TableHead>Role</TableHead>
-                <TableHead>Last Login</TableHead>
-                <TableHead>Risk Score</TableHead>
-                <TableHead>Risk Level</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Login Success</TableHead>
-                <TableHead>Risk Trend</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {users.map((user) => (
-                <TableRow key={user.id}>
-                  <TableCell className="font-medium">
+          <div className="flex items-center space-x-2 mb-4">
+            <Input
+              placeholder="Search users by name, email, or department..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="max-w-sm"
+            />
+          </div>
+
+          {/* Users Table */}
+          <div className="rounded-md border">
+            <div className="relative w-full overflow-auto">
+              <table className="w-full caption-bottom text-sm">
+                <thead className="[&_tr]:border-b">
+                  <tr className="border-b transition-colors hover:bg-muted/50">
+                    <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">
+                      <Button 
+                        variant="ghost" 
+                        onClick={() => handleSort('name')}
+                        className="p-0 font-medium"
+                      >
+                        User
+                        {sortField === 'name' && (
+                          sortDirection === 'asc' ? 
+                          <ArrowUpCircle className="ml-2 h-4 w-4" /> : 
+                          <ArrowDownCircle className="ml-2 h-4 w-4" />
+                        )}
+                      </Button>
+                    </th>
+                    <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">
+                      <Button 
+                        variant="ghost" 
+                        onClick={() => handleSort('department')}
+                        className="p-0 font-medium"
+                      >
+                        Department
+                        {sortField === 'department' && (
+                          sortDirection === 'asc' ? 
+                          <ArrowUpCircle className="ml-2 h-4 w-4" /> : 
+                          <ArrowDownCircle className="ml-2 h-4 w-4" />
+                        )}
+                      </Button>
+                    </th>
+                    <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">
+                      <Button 
+                        variant="ghost" 
+                        onClick={() => handleSort('status')}
+                        className="p-0 font-medium"
+                      >
+                        Status
+                        {sortField === 'status' && (
+                          sortDirection === 'asc' ? 
+                          <ArrowUpCircle className="ml-2 h-4 w-4" /> : 
+                          <ArrowDownCircle className="ml-2 h-4 w-4" />
+                        )}
+                      </Button>
+                    </th>
+                    <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">
+                      <Button 
+                        variant="ghost" 
+                        onClick={() => handleSort('riskScore')}
+                        className="p-0 font-medium"
+                      >
+                        Risk Level
+                        {sortField === 'riskScore' && (
+                          sortDirection === 'asc' ? 
+                          <ArrowUpCircle className="ml-2 h-4 w-4" /> : 
+                          <ArrowDownCircle className="ml-2 h-4 w-4" />
+                        )}
+                      </Button>
+                    </th>
+                    <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">
+                      Last Active
+                    </th>
+                    <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">
+                      Actions
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="[&_tr:last-child]:border-0">
+                  {filteredUsers.map((user) => (
+                    <tr key={user.id} className="border-b transition-colors hover:bg-muted/50">
+                      <td className="p-4 align-middle">
+                        <div className="flex items-center space-x-3">
+                          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-muted">
+                            <span className="text-sm font-medium">
+                              {user.name.split(' ').map(n => n[0]).join('').toUpperCase()}
+                            </span>
+                          </div>
                     <div>
-                      {user.username}
-                      <div className="text-xs text-muted-foreground">{user.email}</div>
+                            <div className="font-medium">{user.name}</div>
+                            <div className="text-sm text-muted-foreground">{user.email}</div>
+                          </div>
                     </div>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="outline">{user.role}</Badge>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-2">
-                      <Clock className="h-4 w-4 text-muted-foreground" />
-                      <span>{formatDate(user.lastLogin)}</span>
+                      </td>
+                      <td className="p-4 align-middle">
+                        <div className="font-medium">{user.department}</div>
+                        <div className="text-sm text-muted-foreground">{user.role}</div>
+                      </td>
+                      <td className="p-4 align-middle">
+                        <div className="flex items-center space-x-2">
+                          {getStatusIcon(user.status)}
+                          <span className="capitalize">{user.status}</span>
                     </div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-2">
-                      <div className="w-16">
-                        <div className="h-2 w-full rounded-full bg-muted">
-                          <div
-                            className={`h-2 rounded-full ${
-                              user.riskLevel === "high"
-                                ? "bg-red-500"
-                                : user.riskLevel === "medium"
-                                  ? "bg-amber-500"
-                                  : "bg-green-500"
-                            }`}
-                            style={{ width: `${user.riskScore}%` }}
-                          />
+                      </td>
+                      <td className="p-4 align-middle">
+                        <Badge variant={getRiskBadgeVariant(user.riskLevel)}>
+                          {user.riskLevel} ({user.riskScore})
+                        </Badge>
+                      </td>
+                      <td className="p-4 align-middle">
+                        <div className="text-sm">
+                          {new Date(user.lastActive).toLocaleDateString()}
                         </div>
+                        <div className="text-xs text-muted-foreground">
+                          {new Date(user.lastActive).toLocaleTimeString()}
                       </div>
-                      <span>{user.riskScore}</span>
+                      </td>
+                      <td className="p-4 align-middle">
+                        <div className="flex items-center space-x-2">
+                          <Button variant="outline" size="sm">
+                            <Shield className="h-4 w-4 mr-1" />
+                            View Details
+                          </Button>
                     </div>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={getRiskBadgeVariant(user.riskLevel)}>{user.riskLevel.toUpperCase()}</Badge>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={getStatusBadgeVariant(user.status)}>{user.status.toUpperCase()}</Badge>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex flex-col">
-                      <span>{getLoginSuccessRate(user)}</span>
-                      <span className="text-xs text-muted-foreground">
-                        {user.totalLogins}/{user.totalLogins + user.failedLogins}
-                      </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
                     </div>
-                  </TableCell>
-                  <TableCell>
-                    {user.loginSuccessRate >= 90 ? (
-                      <div className="flex items-center text-green-600">
-                        <ArrowDownCircle className="mr-1 h-4 w-4" />
-                        Decreasing
                       </div>
-                    ) : user.loginSuccessRate < 70 ? (
-                      <div className="flex items-center text-red-600">
-                        <ArrowUpCircle className="mr-1 h-4 w-4" />
-                        Increasing
+
+          {filteredUsers.length === 0 && (
+            <div className="text-center py-8">
+              <p className="text-muted-foreground">No users found matching your search criteria.</p>
                       </div>
-                    ) : (
-                      <div className="text-muted-foreground">Stable</div>
                     )}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
         </CardContent>
       </Card>
     </div>
-    </AuthorizedComponent>
   )
 }

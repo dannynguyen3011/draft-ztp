@@ -1,28 +1,45 @@
+import { auth } from './auth'
 import { useState, useEffect } from 'react'
-import { keycloakAuth } from './keycloak'
 
-export function useAuth() {
-  const [user, setUser] = useState<any>(null)
-  const [isLoading, setIsLoading] = useState(true)
+export interface AuthState {
+  isAuthenticated: boolean
+  user: any | null
+  roles: string[]
+  loading: boolean
+}
+
+export function useAuth(): AuthState {
+  const [authState, setAuthState] = useState<AuthState>({
+    isAuthenticated: false,
+    user: null,
+    roles: [],
+    loading: true
+  })
 
   useEffect(() => {
-    // Check if user is authenticated
-    if (keycloakAuth.isAuthenticated()) {
-      const currentUser = keycloakAuth.getCurrentUser()
-      setUser({
-        ...currentUser,
-        roles: ['manager'], // Mock role for demo
-        riskLevel: 'low' // Mock risk level
-      })
+    const checkAuth = () => {
+      if (auth.isAuthenticated()) {
+        const currentUser = auth.getCurrentUser()
+        const userRoles = auth.getUserRoles()
+        
+        setAuthState({
+          isAuthenticated: true,
+          user: currentUser,
+          roles: userRoles,
+          loading: false
+        })
+      } else {
+        setAuthState({
+          isAuthenticated: false,
+          user: null,
+          roles: [],
+          loading: false
+        })
+      }
     }
-    setIsLoading(false)
+
+    checkAuth()
   }, [])
 
-  const riskLevel = user?.riskLevel || 'low'
-
-  return {
-    user,
-    isLoading,
-    riskLevel
-  }
+  return authState
 } 

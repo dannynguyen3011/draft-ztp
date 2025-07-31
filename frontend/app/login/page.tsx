@@ -1,89 +1,116 @@
 "use client"
 
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { ShieldCheck, Loader2 } from "lucide-react"
-import { keycloakAuth } from "@/lib/keycloak"
-import { useEffect, useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Hospital, Lock } from "lucide-react"
+import { auth } from "@/lib/auth"
 
 export default function LoginPage() {
+  const [username, setUsername] = useState("")
+  const [password, setPassword] = useState("")
+  const [error, setError] = useState("")
+  const [loading, setLoading] = useState(false)
   const router = useRouter()
-  const [mounted, setMounted] = useState(false)
 
+  // Check if already logged in
   useEffect(() => {
-    setMounted(true)
-  }, [])
-
-  useEffect(() => {
-    // Only run after component is mounted (client-side)
-    if (!mounted) return
-
-    // If already authenticated, redirect to dashboard
-    if (keycloakAuth.isAuthenticated()) {
-      router.push('/dashboard')
+    if (auth.isAuthenticated()) {
+      router.push("/dashboard")
     }
-  }, [router, mounted])
+  }, [router])
 
-  const handleLogin = () => {
-    if (!mounted) return
-    keycloakAuth.login()
-  }
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setLoading(true)
+    setError("")
 
-  // Show loading during SSR/hydration
-  if (!mounted) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-100 px-4">
-        <div className="w-full max-w-md text-center">
-          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" />
-          <p className="text-gray-600">Loading...</p>
-        </div>
-      </div>
-    )
+    const success = auth.login(username, password)
+    
+    if (success) {
+      router.push("/dashboard")
+    } else {
+      setError("Invalid credentials. Please try again.")
+    }
+    
+    setLoading(false)
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100 px-4">
-      <div className="w-full max-w-md">
-        <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-gray-900 flex items-center justify-center gap-2">
-            <ShieldCheck className="h-8 w-8 text-blue-600" />
-            <span>ZeroTrust</span>
-          </h1>
-          <p className="text-gray-600 mt-2">Secure Authentication Platform</p>
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+      <Card className="w-full max-w-md">
+        <CardHeader className="text-center">
+          <div className="flex items-center justify-center gap-2 mb-4">
+            <Hospital className="h-8 w-8 text-blue-600" />
+            <span className="text-2xl font-bold text-gray-900">Hospital Analytics</span>
         </div>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Sign In with Keycloak</CardTitle>
+          <CardTitle>Admin Console Access</CardTitle>
             <CardDescription>
-              Click the button below to authenticate with Keycloak
+            Sign in to access the hospital user behavior monitoring dashboard
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <Button 
-              onClick={handleLogin}
-              className="w-full"
-            >
-              <ShieldCheck className="mr-2 h-4 w-4" />
-              Login with Keycloak
-            </Button>
+          <form onSubmit={handleLogin} className="space-y-4">
+            {error && (
+              <Alert variant="destructive">
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            )}
             
-            <div className="mt-6 p-4 bg-gray-50 rounded-lg">
-              <h3 className="font-medium text-sm mb-2">Direct Integration:</h3>
-              <p className="text-xs text-gray-600">
-                This uses direct Keycloak OIDC flow without NextAuth
-              </p>
-              <p className="text-xs text-gray-600 mt-1">
-                Keycloak URL: {process.env.NEXT_PUBLIC_KEYCLOAK_URL}
-              </p>
-              <p className="text-xs text-gray-600">
-                Realm: {process.env.NEXT_PUBLIC_KEYCLOAK_REALM}
-              </p>
+            <div className="space-y-2">
+              <Label htmlFor="username">Username</Label>
+              <Input
+                id="username"
+                type="text"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                placeholder="Enter username"
+                required
+                disabled={loading}
+              />
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="password">Password</Label>
+              <Input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Enter password"
+                required
+                disabled={loading}
+              />
+            </div>
+            
+            <Button 
+              type="submit"
+              className="w-full"
+              disabled={loading}
+            >
+              {loading ? (
+                <>
+                  <Lock className="mr-2 h-4 w-4 animate-spin" />
+                  Signing in...
+                </>
+              ) : (
+                <>
+                  <Lock className="mr-2 h-4 w-4" />
+                  Sign In
+                </>
+              )}
+            </Button>
+          </form>
+          
+          <div className="mt-4 text-xs text-gray-500 text-center">
+            Demo credentials: admin / admin
               </div>
           </CardContent>
         </Card>
-      </div>
     </div>
   )
 }

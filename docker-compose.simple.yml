@@ -1,7 +1,6 @@
 version: '3.8'
 
 services:
-
   # Hospital Analytics Backend
   backend:
     build:
@@ -12,9 +11,7 @@ services:
       - NODE_ENV=production
       - PORT=3003
       - MONGO_URI=mongodb+srv://vqh04092004:admin@cluster0.nnhndae.mongodb.net/hospital_analytics?retryWrites=true&w=majority&ssl=true&authSource=admin
-      - HOSPITAL_DB_NAME=hospital_analytics
-      - HOSPITAL_COLLECTION_PREFIX=user_behavior
-      - FRONTEND_URL=http://localhost:3001
+      - FRONTEND_URL=http://localhost:3000
     ports:
       - "3003:3003"
     networks:
@@ -34,13 +31,12 @@ services:
     container_name: hospital-admin-frontend
     environment:
       - NODE_ENV=production
-      - NEXT_PUBLIC_API_URL=http://backend:3003
-      - NEXT_PUBLIC_BACKEND_URL=http://backend:3003
-      - NEXT_PUBLIC_HOSPITAL_DB_NAME=hospital_analytics
-      - NEXT_PUBLIC_HOSPITAL_DB_TYPE=mongodb
+      - NEXT_PUBLIC_API_URL=http://localhost:3003
       - NEXT_PUBLIC_APP_NAME=Hospital Analytics Admin Console
+      - NEXT_PUBLIC_HOSPITAL_DB_NAME=hospital_analytics
+      - NEXT_PUBLIC_HOSPITAL_DB_TYPE=MongoDB Atlas
     ports:
-      - "3001:3001"
+      - "3000:3000"
     depends_on:
       - backend
     networks:
@@ -49,7 +45,4 @@ services:
 
 networks:
   hospital-network:
-    driver: bridge
-
-# Note: MongoDB volumes removed since we're using Hospital MongoDB Atlas
-# The hospital database is hosted on MongoDB Atlas and accessed remotely 
+    driver: bridge 

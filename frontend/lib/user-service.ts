@@ -9,26 +9,31 @@ export interface User {
   email: string;
   roles: string[];
   role: string; // Primary role for display
-  lastLogin: string;
-  totalLogins: number;
-  failedLogins: number;
-  averageRiskScore: number;
-  riskScore: number; // Alias for averageRiskScore
+  department: string;
+  lastActive: string;
+  totalActivities: number;
+  riskScore: number;
   status: 'active' | 'inactive';
   riskLevel: 'low' | 'medium' | 'high';
-  loginSuccessRate: number;
 }
 
 export interface UsersResponse {
   success: boolean;
-  users: User[];
-  total: number;
+  data: User[];
+  count: number;
 }
 
-// Fetch all users from backend
+export interface UserStats {
+  total: number;
+  active: number;
+  inactive: number;
+  highRisk: number;
+}
+
+// Fetch all users from backend (MongoDB hospital data)
 export async function getUsers(): Promise<User[]> {
   try {
-    const response = await fetch(`${BACKEND_URL}/api/log/users`);
+    const response = await fetch(`${BACKEND_URL}/api/hospital/users`);
     
     if (!response.ok) {
       throw new Error(`Failed to fetch users: ${response.status}`);
@@ -36,13 +41,15 @@ export async function getUsers(): Promise<User[]> {
 
     const data: UsersResponse = await response.json();
     
-    if (data.success && data.users) {
-      return data.users.map(user => ({
+    if (data.success && data.data) {
+      return data.data.map(user => ({
         ...user,
-        // Map backend roles to frontend format
-        role: getUserRole(user.roles),
-        name: user.username, // Use username as display name
-        riskScore: user.averageRiskScore
+        // Ensure all fields are properly mapped
+        userId: user.id || user.userId,
+        username: user.name || user.username,
+        role: getUserRole(user.roles || []), // Ensure roles is always an array
+        riskLevel: user.riskLevel || 'low',
+        roles: user.roles || [] // Ensure roles is always an array
       }));
     }
     
@@ -54,11 +61,51 @@ export async function getUsers(): Promise<User[]> {
   }
 }
 
+// Fetch user statistics from backend
+export async function getUserStats(): Promise<UserStats> {
+  try {
+    const response = await fetch(`${BACKEND_URL}/api/hospital/users/stats`);
+    
+    if (!response.ok) {
+      throw new Error(`Failed to fetch user stats: ${response.status}`);
+    }
+
+    const data = await response.json();
+    
+    if (data.success && data.data) {
+      return data.data;
+    }
+    
+    return {
+      total: 0,
+      active: 0,
+      inactive: 0,
+      highRisk: 0
+    };
+  } catch (error) {
+    console.error('Error fetching user stats:', error);
+    return {
+      total: 0,
+      active: 0,
+      inactive: 0,
+      highRisk: 0
+    };
+  }
+}
+
 // Helper function to determine primary role
 function getUserRole(roles: string[]): string {
-  if (roles.includes('admin')) return 'admin';
-  if (roles.includes('manager')) return 'manager';
-  return 'member';
+  // Handle undefined or null roles
+  if (!roles || !Array.isArray(roles)) {
+    return 'User';
+  }
+  
+  if (roles.includes('admin')) return 'Admin';
+  if (roles.includes('manager')) return 'Manager';
+  if (roles.includes('doctor')) return 'Doctor';
+  if (roles.includes('nurse')) return 'Nurse';
+  if (roles.includes('employee')) return 'Employee';
+  return 'User';
 }
 
 // Get users filtered by risk level
@@ -69,30 +116,28 @@ export async function getUsersByRisk(riskLevel: 'low' | 'medium' | 'high'): Prom
 
 // Get high-risk users (for security monitoring)
 export async function getHighRiskUsers(): Promise<User[]> {
-  return getUsersByRisk('high');
+  try {
+    const response = await fetch(`${BACKEND_URL}/api/hospital/high-risk-users`);
+    
+    if (!response.ok) {
+      throw new Error(`Failed to fetch high-risk users: ${response.status}`);
+    }
+
+    const data = await response.json();
+    
+    if (data.success && data.data) {
+      return data.data;
+    }
+    
+    return [];
+  } catch (error) {
+    console.error('Error fetching high-risk users:', error);
+    return [];
+  }
 }
 
 // Get active users (logged in within last week)
 export async function getActiveUsers(): Promise<User[]> {
   const users = await getUsers();
   return users.filter(user => user.status === 'active');
-}
-
-// Get user statistics
-export async function getUserStats() {
-  const users = await getUsers();
-  
-  const stats = {
-    total: users.length,
-    active: users.filter(u => u.status === 'active').length,
-    inactive: users.filter(u => u.status === 'inactive').length,
-    lowRisk: users.filter(u => u.riskLevel === 'low').length,
-    mediumRisk: users.filter(u => u.riskLevel === 'medium').length,
-    highRisk: users.filter(u => u.riskLevel === 'high').length,
-    averageLoginSuccess: users.length > 0 
-      ? Math.round(users.reduce((sum, u) => sum + u.loginSuccessRate, 0) / users.length)
-      : 0
-  };
-  
-  return stats;
 } 

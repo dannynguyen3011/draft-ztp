@@ -14,6 +14,7 @@ import {
   LogOut,
   Network,
   Database,
+  Hospital,
 } from "lucide-react"
 
 import {
@@ -35,14 +36,14 @@ export function AppSidebar() {
     <Sidebar>
       <SidebarHeader>
         <div className="flex items-center gap-2 px-4 py-2">
-          <Shield className="h-6 w-6" />
-          <span className="font-bold">ZeroTrust Platform</span>
+          <Hospital className="h-6 w-6" />
+          <span className="font-bold">Hospital Analytics</span>
         </div>
       </SidebarHeader>
       <SidebarSeparator />
       <SidebarContent>
         <SidebarGroup>
-          <SidebarGroupLabel>Dashboard</SidebarGroupLabel>
+          <SidebarGroupLabel>Analytics Dashboard</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               <SidebarMenuItem>
@@ -63,9 +64,9 @@ export function AppSidebar() {
               </SidebarMenuItem>
               <SidebarMenuItem>
                 <SidebarMenuButton asChild>
-                  <a href="/dashboard/activity">
+                  <a href="/dashboard/audit">
                     <Activity />
-                    <span>Activity Log</span>
+                    <span>User Activity</span>
                   </a>
                 </SidebarMenuButton>
               </SidebarMenuItem>
@@ -73,30 +74,30 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
         <SidebarGroup>
-          <SidebarGroupLabel>Identity & Access</SidebarGroupLabel>
+          <SidebarGroupLabel>User Management</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               <SidebarMenuItem>
                 <SidebarMenuButton asChild>
-                  <a href="/users">
+                  <a href="/dashboard/users">
                     <Users />
-                    <span>Users</span>
+                    <span>Hospital Users</span>
                   </a>
                 </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>
                 <SidebarMenuButton asChild>
-                  <a href="/policies">
-                    <Lock />
-                    <span>Policies</span>
-                  </a>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton asChild>
-                  <a href="/mfa">
+                  <a href="/dashboard/behavioral-monitoring">
                     <Shield />
-                    <span>MFA Settings</span>
+                    <span>Behavior Analysis</span>
+                  </a>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild>
+                  <a href="/dashboard/risk-scores">
+                    <Bell />
+                    <span>Risk Assessment</span>
                   </a>
                 </SidebarMenuButton>
               </SidebarMenuItem>
@@ -104,46 +105,30 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
         <SidebarGroup>
-          <SidebarGroupLabel>Monitoring</SidebarGroupLabel>
+          <SidebarGroupLabel>Security Monitoring</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               <SidebarMenuItem>
                 <SidebarMenuButton asChild>
-                  <a href="/alerts">
+                  <a href="/dashboard/incident-response">
                     <Bell />
-                    <span>Alerts</span>
+                    <span>Security Events</span>
                   </a>
                 </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>
                 <SidebarMenuButton asChild>
-                  <a href="/reports">
+                  <a href="/dashboard/access-control">
+                    <Lock />
+                    <span>Access Control</span>
+                  </a>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild>
+                  <a href="/dashboard/compliance">
                     <FileText />
-                    <span>Reports</span>
-                  </a>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton asChild>
-                  <a href="/integrations">
-                    <Server />
-                    <span>Integrations</span>
-                  </a>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton asChild>
-                  <a href="/dashboard/integrations">
-                    <Network />
-                    <span>Integrations</span>
-                  </a>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton asChild>
-                  <a href="/dashboard/compliance-encryption">
-                    <Database />
-                    <span>Compliance & Encryption</span>
+                    <span>Compliance Reports</span>
                   </a>
                 </SidebarMenuButton>
               </SidebarMenuItem>
@@ -155,7 +140,7 @@ export function AppSidebar() {
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton asChild>
-              <a href="/settings">
+              <a href="/dashboard/profile">
                 <Settings />
                 <span>Settings</span>
               </a>
@@ -163,7 +148,7 @@ export function AppSidebar() {
           </SidebarMenuItem>
           <SidebarMenuItem>
             <SidebarMenuButton asChild>
-              <a href="/logout">
+              <a href="/login">
                 <LogOut />
                 <span>Logout</span>
               </a>

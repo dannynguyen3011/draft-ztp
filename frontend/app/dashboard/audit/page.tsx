@@ -21,23 +21,7 @@ import {
 } from "@/components/ui/pagination"
 import { AlertCircle, CheckCircle, Clock, Filter, RefreshCw, Shield, User } from "lucide-react"
 import { HospitalAuditEventType, HospitalResourceType } from "@/lib/hospital-schema"
-import { onAuditEvent } from "@/lib/audit-service"
-
-interface AuditLog {
-  id: string
-  timestamp: string | Date
-  user_id: string | null
-  username?: string | null
-  event_type: string
-  resource_type: string
-  resource_id: string | null
-  action: string
-  status: "success" | "failure"
-  ip_address: string | null
-  user_agent: string | null
-  details: Record<string, any>
-  risk_score: number | null
-}
+import { getAuditLogs, getSecurityEvents, type AuditLog } from "@/lib/audit-service"
 
 interface AuditLogsResponse {
   logs: AuditLog[]
@@ -47,7 +31,7 @@ interface AuditLogsResponse {
 
 export default function AuditLogsPage() {
   const router = useRouter()
-  const { user, isLoading } = useAuth()
+  const { user, loading: authLoading } = useAuth()
   const [activeTab, setActiveTab] = useState("all")
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([])
   const [securityEvents, setSecurityEvents] = useState<AuditLog[]>([])
@@ -56,9 +40,7 @@ export default function AuditLogsPage() {
   const [totalPages, setTotalPages] = useState(1)
   const [totalLogs, setTotalLogs] = useState(0)
   const [error, setError] = useState<string | null>(null)
-  const [realTimeEnabled, setRealTimeEnabled] = useState(true)
   const [lastUpdateTime, setLastUpdateTime] = useState<Date | null>(null)
-  const [newLogCount, setNewLogCount] = useState(0)
 
   // Filter states
   const [filters, setFilters] = useState({
@@ -78,180 +60,69 @@ export default function AuditLogsPage() {
       setLoading(true)
       setError(null)
 
-      // Build query parameters
-      const queryParams = new URLSearchParams({
-        page: currentPage.toString(),
-        limit: "20",
-      })
-
-      // Add filters if they exist
-      if (filters.userId) queryParams.append("userId", filters.userId)
-      if (filters.eventType && filters.eventType !== "all") queryParams.append("eventType", filters.eventType)
-      if (filters.resourceType && filters.resourceType !== "all")
-        queryParams.append("resourceType", filters.resourceType)
-      if (filters.status && filters.status !== "all") queryParams.append("status", filters.status)
-      if (filters.startDate) queryParams.append("startDate", filters.startDate)
-      if (filters.endDate) queryParams.append("endDate", filters.endDate)
-
-      const response = await fetch(`/api/audit?${queryParams.toString()}`)
-
-      if (!response.ok) {
-        throw new Error(`Failed to fetch audit logs: ${response.status}`)
-      }
-
-      const data = await response.json()
-
-      if (data.logs && Array.isArray(data.logs)) {
-        // Sort logs by timestamp (newest first) to ensure proper order
-        const sortedLogs = data.logs.sort((a: AuditLog, b: AuditLog) => 
-          new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-        )
-        setAuditLogs(sortedLogs)
-        setTotalPages(data.pages || 1)
-        setTotalLogs(data.total || data.logs.length)
-      } else {
-        // If the response doesn't have the expected format, generate sample data
-        const sampleLogs = generateSampleAuditLogs(20)
-        setAuditLogs(sampleLogs)
-        setTotalPages(3)
-        setTotalLogs(60)
-      }
-    } catch (error) {
-      console.error("Error fetching audit logs:", error)
-      setError("Failed to fetch audit logs. Using sample data instead.")
+      const result = await getAuditLogs(filters, currentPage, 20)
+      
+      setAuditLogs(result.logs)
+      setTotalLogs(result.total)
+      setTotalPages(result.pages)
+      setLastUpdateTime(new Date())
+      
+    } catch (err) {
+      console.error('Error fetching audit logs:', err)
+      setError('Failed to fetch audit logs. Using sample data.')
 
       // Generate sample data as fallback
       const sampleLogs = generateSampleAuditLogs(20)
       setAuditLogs(sampleLogs)
-      setTotalPages(3)
       setTotalLogs(60)
+      setTotalPages(3)
     } finally {
       setLoading(false)
     }
-  }, [currentPage, filters])
+  }, [filters, currentPage])
 
   // Function to fetch security events
   const fetchSecurityEvents = useCallback(async () => {
     try {
-      const response = await fetch("/api/audit/security")
-
-      if (!response.ok) {
-        throw new Error(`Failed to fetch security events: ${response.status}`)
-      }
-
-      const data = await response.json()
-
-      if (data.events && Array.isArray(data.events)) {
-        setSecurityEvents(data.events)
-      } else {
-        // If the response doesn't have the expected format, generate sample data
-        const sampleEvents = generateSampleSecurityEvents(10)
-        setSecurityEvents(sampleEvents)
-      }
-    } catch (error) {
-      console.error("Error fetching security events:", error)
-
-      // Generate sample data as fallback
-      const sampleEvents = generateSampleSecurityEvents(10)
-      setSecurityEvents(sampleEvents)
-    }
-  }, [])
-
-  useEffect(() => {
-    if (!isLoading && !user) {
-      router.push("/login")
-      return
-    }
-
-    // Check if user is a manager
-    if (user && !user.roles.includes("manager")) {
-      router.push("/dashboard")
-      return
-    }
-
-    // Fetch audit logs when component mounts or filters/page changes
-    fetchAuditLogs()
-
-    // Fetch security events
-    fetchSecurityEvents()
-  }, [user, isLoading, router, currentPage, activeTab, fetchAuditLogs, fetchSecurityEvents])
-
-  // Set up real-time updates
-  useEffect(() => {
-    if (!realTimeEnabled) return
-
-    // Register for real-time audit log updates
-    const unsubscribe = onAuditEvent((newLog) => {
-      setLastUpdateTime(new Date())
-      setNewLogCount((prev) => prev + 1)
+      setLoading(true)
+      setError(null)
       
-      // Update the audit logs list if we're on the first page
-      if (currentPage === 1 && activeTab === "all") {
-        setAuditLogs((prevLogs) => {
-          // Check if this log already exists (prevent duplicates)
-          const existingLogIndex = prevLogs.findIndex(log => log.id === newLog.id)
-          if (existingLogIndex !== -1) {
-            // If log exists, update it in place and re-sort
-            const updatedLogs = [...prevLogs]
-            updatedLogs[existingLogIndex] = newLog
-            return updatedLogs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
-          }
-          
-          // Add new log and sort by timestamp (newest first)
-          const updatedLogs = [newLog, ...prevLogs]
-            .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
-          
-          // Keep only the most recent 20 logs
-          if (updatedLogs.length > 20) {
-            return updatedLogs.slice(0, 20)
-          }
-          
-          return updatedLogs
-        })
-        setTotalLogs((prev) => prev + 1)
-      }
+      const events = await getSecurityEvents(filters, currentPage, 20)
+      setSecurityEvents(events)
+      setLastUpdateTime(new Date())
+      
+    } catch (err) {
+      console.error('Error fetching security events:', err)
+      setError('Failed to fetch security events. Using sample data.')
 
-      // Update security events if it's a security-related event
-      if (
-        activeTab === "security" &&
-                ((newLog.event_type === HospitalAuditEventType.AUTHENTICATION && newLog.status === "failure") ||
-        newLog.event_type === HospitalAuditEventType.SECURITY_EVENT ||
-          (newLog.risk_score !== null && newLog.risk_score > 70))
-      ) {
-        setSecurityEvents((prevEvents) => {
-          // Check if this log already exists (prevent duplicates)
-          const existingLogIndex = prevEvents.findIndex(event => event.id === newLog.id)
-          if (existingLogIndex !== -1) {
-            // If log exists, update it in place and re-sort
-            const updatedEvents = [...prevEvents]
-            updatedEvents[existingLogIndex] = newLog
-            return updatedEvents.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
-          }
-          
-          // Add new event and sort by timestamp (newest first)
-          const updatedEvents = [newLog, ...prevEvents]
-            .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
-          
-          // Keep only the most recent 20 events
-          if (updatedEvents.length > 20) {
-            return updatedEvents.slice(0, 20)
-          }
-          
-          return updatedEvents
-        })
-      }
-    })
-
-    return () => {
-      // Clean up the subscription when the component unmounts
-      unsubscribe()
+      // Generate sample security events as fallback
+      const sampleEvents = generateSampleSecurityEvents(20)
+      setSecurityEvents(sampleEvents)
+    } finally {
+      setLoading(false)
     }
-  }, [realTimeEnabled, currentPage, activeTab])
+  }, [filters, currentPage])
+
+  // Fetch data when component mounts or dependencies change
+  useEffect(() => {
+    if (!user && !authLoading) {
+      router.push('/login')
+      return
+    }
+
+    if (user) {
+      if (activeTab === "all") {
+    fetchAuditLogs()
+      } else if (activeTab === "security") {
+    fetchSecurityEvents()
+      }
+    }
+  }, [user, authLoading, router, activeTab, fetchAuditLogs, fetchSecurityEvents])
 
   // Generate sample audit logs for fallback
   const generateSampleAuditLogs = (count: number): AuditLog[] => {
-      const eventTypes = Object.values(HospitalAuditEventType)
-  const resourceTypes = Object.values(HospitalResourceType)
+    const eventTypes = Object.values(HospitalAuditEventType)
+    const resourceTypes = Object.values(HospitalResourceType)
     const statuses = ["success", "failure"] as const
     const sampleUsers = [
       { id: "user-1", username: "huy" },
@@ -283,47 +154,31 @@ export default function AuditLogsPage() {
 
   // Generate sample security events for fallback
   const generateSampleSecurityEvents = (count: number): AuditLog[] => {
-    const sampleUsers = [
-      { id: "user-1", username: "huy" },
-      { id: "user-2", username: "duc" },
-      { id: "user-3", username: "admin" },
-      { id: "user-4", username: "manager1" },
-      { id: null, username: null }
-    ]
-
-    return Array.from({ length: count }, (_, i) => {
-      const user = sampleUsers[Math.floor(Math.random() * 5)]
-      return {
+    return Array.from({ length: count }, (_, i) => ({
         id: `security-${i}`,
         timestamp: new Date(Date.now() - Math.random() * 7 * 24 * 60 * 60 * 1000).toISOString(),
-        user_id: user.id,
-        username: user.username,
-        event_type: [HospitalAuditEventType.AUTHENTICATION, HospitalAuditEventType.SECURITY_EVENT][Math.floor(Math.random() * 2)],
-        resource_type: HospitalResourceType.USER,
-        resource_id: Math.random() > 0.3 ? `resource-${Math.floor(Math.random() * 10)}` : null,
-        action: ["failed_login", "suspicious_activity", "brute_force_attempt"][Math.floor(Math.random() * 3)],
-        status: "failure",
+      user_id: `user-${Math.floor(Math.random() * 4) + 1}`,
+      username: ["huy", "duc", "admin", "manager1"][Math.floor(Math.random() * 4)],
+      event_type: HospitalAuditEventType.SECURITY_EVENT,
+      resource_type: HospitalResourceType.USER,
+      resource_id: null,
+      action: ["failed_login", "suspicious_activity", "brute_force"][Math.floor(Math.random() * 3)],
+      status: "failure" as const,
         ip_address: `192.168.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}`,
         user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        details: { reason: "suspicious_location", username: user.username },
+      details: { reason: "suspicious_location" },
         risk_score: 70 + Math.floor(Math.random() * 30),
-      }
-    })
-  }
-
-  const handleFilterChange = (key: string, value: string) => {
-    setFilters((prev) => ({
-      ...prev,
-      [key]: value,
     }))
   }
 
-  const applyFilters = () => {
-    setCurrentPage(1) // Reset to first page when applying filters
-    fetchAuditLogs()
+  // Handle filter changes
+  const handleFilterChange = (key: string, value: string) => {
+    setFilters(prev => ({ ...prev, [key]: value }))
+    setCurrentPage(1) // Reset to first page when filters change
   }
 
-  const resetFilters = () => {
+  // Clear all filters
+  const clearFilters = () => {
     setFilters({
       userId: "",
       eventType: "",
@@ -333,22 +188,49 @@ export default function AuditLogsPage() {
       endDate: "",
     })
     setCurrentPage(1)
+  }
+
+  // Handle manual refresh
+  const handleRefresh = () => {
+    if (activeTab === "all") {
     fetchAuditLogs()
+    } else if (activeTab === "security") {
+      fetchSecurityEvents()
+    }
   }
 
-  if (isLoading || loading) {
-    return (
-      <div className="flex h-screen items-center justify-center">
-        <p className="text-lg">Loading audit logs...</p>
-      </div>
-    )
+  // Format timestamp
+  const formatTimestamp = (timestamp: string | Date) => {
+    const date = new Date(timestamp)
+    return date.toLocaleString()
   }
 
-  const formatDate = (dateString: string | Date) => {
-    const date = typeof dateString === "string" ? new Date(dateString) : dateString
-    return date.toLocaleDateString() + " " + date.toLocaleTimeString()
+  // Get status badge variant
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case "success":
+        return <Badge variant="default" className="bg-green-100 text-green-800"><CheckCircle className="w-3 h-3 mr-1" />Success</Badge>
+      case "failure":
+        return <Badge variant="destructive"><AlertCircle className="w-3 h-3 mr-1" />Failure</Badge>
+      default:
+        return <Badge variant="secondary">{status}</Badge>
+    }
   }
 
+  // Get risk badge
+  const getRiskBadge = (riskScore: number | null) => {
+    if (riskScore === null) return null
+    
+    if (riskScore >= 70) {
+      return <Badge variant="destructive">High Risk ({riskScore})</Badge>
+    } else if (riskScore >= 40) {
+      return <Badge variant="outline" className="border-yellow-400 text-yellow-700">Medium Risk ({riskScore})</Badge>
+    } else {
+      return <Badge variant="default" className="bg-green-100 text-green-800">Low Risk ({riskScore})</Badge>
+    }
+  }
+
+  // Get event type icon helper function
   const getEventTypeIcon = (eventType: string) => {
     switch (eventType) {
       case HospitalAuditEventType.AUTHENTICATION:
@@ -360,16 +242,17 @@ export default function AuditLogsPage() {
     }
   }
 
-  const getStatusBadge = (status: string) => {
-    return status === "success" ? (
-      <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
-        <CheckCircle className="mr-1 h-3 w-3" /> Success
-      </Badge>
-    ) : (
-      <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200">
-        <AlertCircle className="mr-1 h-3 w-3" /> Failure
-      </Badge>
-    )
+  if (authLoading || loading) {
+    return <div className="flex items-center justify-center min-h-screen">
+      <div className="text-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+        <p className="mt-2 text-gray-600">Loading...</p>
+      </div>
+    </div>
+  }
+
+  if (!user) {
+    return null
   }
 
   return (
@@ -378,24 +261,13 @@ export default function AuditLogsPage() {
         <h1 className="text-2xl font-bold">Audit Logs</h1>
         <div className="flex gap-2">
           <Button
-            variant={realTimeEnabled ? "default" : "outline"}
-            onClick={() => setRealTimeEnabled(!realTimeEnabled)}
+            variant="outline"
+            onClick={() => setShowFilters(!showFilters)}
           >
-            <div className="flex items-center gap-2">
-              {realTimeEnabled && <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />}
-              {realTimeEnabled ? "Real-time: ON" : "Real-time: OFF"}
-              {realTimeEnabled && lastUpdateTime && (
-                <span className="text-xs opacity-75">
-                  (Last: {lastUpdateTime.toLocaleTimeString()})
-                </span>
-              )}
-            </div>
-          </Button>
-          <Button variant="outline" onClick={() => setShowFilters(!showFilters)}>
             <Filter className="mr-2 h-4 w-4" />
             {showFilters ? "Hide Filters" : "Show Filters"}
           </Button>
-          <Button variant="outline" onClick={fetchAuditLogs}>
+          <Button variant="outline" onClick={handleRefresh}>
             <RefreshCw className="mr-2 h-4 w-4" />
             Refresh
           </Button>
@@ -507,10 +379,10 @@ export default function AuditLogsPage() {
             </div>
 
             <div className="mt-4 flex justify-end gap-2">
-              <Button variant="outline" onClick={resetFilters}>
+              <Button variant="outline" onClick={clearFilters}>
                 Reset
               </Button>
-              <Button onClick={applyFilters}>Apply Filters</Button>
+              <Button onClick={handleRefresh}>Apply Filters</Button>
             </div>
           </CardContent>
         </Card>
@@ -528,14 +400,9 @@ export default function AuditLogsPage() {
               <CardTitle>Audit Log History</CardTitle>
               <CardDescription>
                 Showing {auditLogs.length} of {totalLogs} total logs • Page {currentPage} of {totalPages}
-                {realTimeEnabled && (
-                  <span>
-                    {" • Real-time updates enabled"}
-                    {newLogCount > 0 && (
-                      <span className="text-green-600 font-medium">
-                        {" • "}{newLogCount} new logs received
-                      </span>
-                    )}
+                {lastUpdateTime && (
+                  <span className="text-xs opacity-75">
+                    (Last update: {lastUpdateTime.toLocaleTimeString()})
                   </span>
                 )}
               </CardDescription>
@@ -559,7 +426,7 @@ export default function AuditLogsPage() {
                   {auditLogs.length > 0 ? (
                     auditLogs.map((log, index) => (
                       <TableRow key={`${log.id}-${new Date(log.timestamp).getTime()}-${index}`}>
-                        <TableCell>{formatDate(log.timestamp)}</TableCell>
+                        <TableCell>{formatTimestamp(log.timestamp)}</TableCell>
                         <TableCell>
                           <div className="flex items-center gap-1">
                             {getEventTypeIcon(log.event_type)}
@@ -585,7 +452,7 @@ export default function AuditLogsPage() {
                         <TableCell>{getStatusBadge(log.status)}</TableCell>
                         <TableCell>{log.ip_address || "N/A"}</TableCell>
                         <TableCell>
-                          {log.risk_score !== null ? (
+                          {log.risk_score !== null && log.risk_score !== undefined ? (
                             <div className="flex items-center gap-2">
                               <div className="w-12">
                                 <div className="h-2 w-full rounded-full bg-muted">
@@ -597,14 +464,14 @@ export default function AuditLogsPage() {
                                           ? "bg-amber-500"
                                           : "bg-green-500"
                                     }`}
-                                    style={{ width: `${log.risk_score}%` }}
+                                    style={{ width: `${Math.min(log.risk_score, 100)}%` }}
                                   />
                                 </div>
                               </div>
-                              <span>{log.risk_score}</span>
+                              <span className="text-sm font-medium">{log.risk_score}%</span>
                             </div>
                           ) : (
-                            "N/A"
+                            <span className="text-gray-400">-</span>
                           )}
                         </TableCell>
                       </TableRow>
@@ -624,8 +491,7 @@ export default function AuditLogsPage() {
                   <PaginationContent>
                     <PaginationItem>
                       <PaginationPrevious
-                        onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
-                        disabled={currentPage === 1}
+                        onClick={() => currentPage > 1 && setCurrentPage((prev) => Math.max(prev - 1, 1))}
                       />
                     </PaginationItem>
 
@@ -646,8 +512,7 @@ export default function AuditLogsPage() {
 
                     <PaginationItem>
                       <PaginationNext
-                        onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
-                        disabled={currentPage === totalPages}
+                        onClick={() => currentPage < totalPages && setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
                       />
                     </PaginationItem>
                   </PaginationContent>
@@ -663,7 +528,11 @@ export default function AuditLogsPage() {
               <CardTitle>Security Events</CardTitle>
               <CardDescription>
                 High-risk activities and security incidents
-                {realTimeEnabled && " • Real-time updates enabled"}
+                {lastUpdateTime && (
+                  <span className="text-xs opacity-75">
+                    (Last update: {lastUpdateTime.toLocaleTimeString()})
+                  </span>
+                )}
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -684,7 +553,7 @@ export default function AuditLogsPage() {
                   {securityEvents.length > 0 ? (
                     securityEvents.map((event, index) => (
                       <TableRow key={`security-${event.id}-${new Date(event.timestamp).getTime()}-${index}`}>
-                        <TableCell>{formatDate(event.timestamp)}</TableCell>
+                        <TableCell>{formatTimestamp(event.timestamp)}</TableCell>
                         <TableCell>
                           <div className="flex items-center gap-1">
                             {getEventTypeIcon(event.event_type)}
@@ -696,7 +565,7 @@ export default function AuditLogsPage() {
                         <TableCell>{getStatusBadge(event.status)}</TableCell>
                         <TableCell>{event.ip_address || "N/A"}</TableCell>
                         <TableCell>
-                          {event.risk_score !== null ? (
+                          {event.risk_score !== null && event.risk_score !== undefined ? (
                             <div className="flex items-center gap-2">
                               <div className="w-12">
                                 <div className="h-2 w-full rounded-full bg-muted">
@@ -708,14 +577,14 @@ export default function AuditLogsPage() {
                                           ? "bg-amber-500"
                                           : "bg-green-500"
                                     }`}
-                                    style={{ width: `${event.risk_score}%` }}
+                                    style={{ width: `${Math.min(event.risk_score, 100)}%` }}
                                   />
                                 </div>
                               </div>
-                              <span>{event.risk_score}</span>
+                              <span className="text-sm font-medium">{event.risk_score}%</span>
                             </div>
                           ) : (
-                            "N/A"
+                            <span className="text-gray-400">-</span>
                           )}
                         </TableCell>
                         <TableCell>

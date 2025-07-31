@@ -1,346 +1,180 @@
-// Frontend Risk Service - manages user risk scores and interactions with backend
-import { keycloakAuth } from './keycloak';
+// Frontend Risk Service - simplified for Hospital Analytics Admin Console
+import { auth } from './auth';
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3003';
-
+// Risk assessment types
 export interface RiskData {
   userId: string;
+  username: string;
   riskScore: number;
   riskLevel: 'low' | 'medium' | 'high';
+  lastActivity: string;
+  riskFactors: string[];
+  recommendations: string[];
+}
+
+export interface UserActivity {
+  id: string;
+  action: string;
+  resource: string;
   timestamp: string;
+  riskScore: number;
+  metadata?: Record<string, any>;
 }
 
-export interface RiskSummary {
-  stats: {
-    totalUsers: number;
-    lowRisk: number;
-    mediumRisk: number;
-    highRisk: number;
-    averageRiskScore: number;
-  };
-  users: Array<{
-    userId: string;
-    username: string;
-    roles: string[];
-    riskScore: number;
-    lastActivity: string;
-  }>;
-}
+// Risk calculation thresholds
+const RISK_THRESHOLDS = {
+  LOW: 30,
+  MEDIUM: 70,
+  HIGH: 100
+};
 
-// Cache for risk scores to reduce API calls
-const riskCache = new Map<string, { data: RiskData; expiry: number }>();
-const CACHE_DURATION = 30 * 1000; // 30 seconds
+class RiskService {
+  private baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3003';
 
-/**
- * Get current user's risk score
- */
-export async function getCurrentUserRiskScore(): Promise<RiskData | null> {
-  try {
-    if (!keycloakAuth.isAuthenticated()) {
-      throw new Error('User not authenticated');
-    }
-
-    const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null;
-    if (!token) {
-      throw new Error('No access token available');
-    }
-
-    const user = keycloakAuth.getCurrentUser();
-    const userId = user?.sub || user?.id;
-    
-    if (!userId) {
-      throw new Error('User ID not available');
-    }
-
-    // Check cache first
-    const cached = riskCache.get(userId);
-    if (cached && Date.now() < cached.expiry) {
-      return cached.data;
-    }
-
-    const response = await fetch(`${BACKEND_URL}/api/risk/my-score`, {
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      }
-    });
-
-    if (!response.ok) {
-      throw new Error(`Failed to fetch risk score: ${response.status}`);
-    }
-
-    const data = await response.json();
-    
-    if (data.success) {
-      const riskData: RiskData = {
-        userId: data.userId,
-        riskScore: data.riskScore,
-        riskLevel: data.riskLevel,
-        timestamp: data.timestamp
-      };
-
-      // Cache the result
-      riskCache.set(userId, {
-        data: riskData,
-        expiry: Date.now() + CACHE_DURATION
+  private async makeRequest(endpoint: string, options: RequestInit = {}) {
+    try {
+      const response = await fetch(`${this.baseUrl}/api${endpoint}`, {
+        headers: {
+          'Content-Type': 'application/json',
+          ...options.headers,
+        },
+        ...options,
       });
 
-      return riskData;
-    }
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
 
-    return null;
-  } catch (error) {
-    console.error('Error fetching current user risk score:', error);
-    return null;
+      return await response.json();
+    } catch (error) {
+      console.error(`API request failed for ${endpoint}:`, error);
+      throw error;
+    }
   }
-}
 
-/**
- * Get risk score for a specific user (admin/manager only)
- */
-export async function getUserRiskScore(userId: string): Promise<RiskData | null> {
-  try {
-    if (!keycloakAuth.isAuthenticated()) {
-      throw new Error('User not authenticated');
+  // Log user activity with risk assessment - simplified for admin console
+  async logUserActivity(action: string, resource: string, metadata: Record<string, any> = {}): Promise<void> {
+    // For admin console, just log to console - don't track admin navigation
+    console.log('Admin console activity (not tracked):', { action, resource, metadata });
+  }
+
+  // Get current user's risk assessment - simplified for admin
+  async getCurrentUserRiskScore(): Promise<RiskData | null> {
+    if (!auth.isAuthenticated()) {
+      return null;
     }
 
-    const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null;
-    if (!token) {
-      throw new Error('No access token available');
-    }
-
-    const response = await fetch(`${BACKEND_URL}/api/risk/user/${userId}`, {
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      }
-    });
-
-    if (!response.ok) {
-      if (response.status === 403) {
-        throw new Error('Insufficient permissions to view user risk score');
-      }
-      throw new Error(`Failed to fetch user risk score: ${response.status}`);
-    }
-
-    const data = await response.json();
-    
-    if (data.success) {
+    try {
+      // For admin console, return mock data since we don't need complex risk scoring
+      const user = auth.getCurrentUser();
       return {
-        userId: data.userId,
-        riskScore: data.riskScore,
-        riskLevel: data.riskLevel,
-        timestamp: data.timestamp
+        userId: 'admin',
+        username: user?.username || 'admin',
+        riskScore: 15, // Low risk for admin
+        riskLevel: 'low',
+        lastActivity: new Date().toISOString(),
+        riskFactors: [],
+        recommendations: ['Continue monitoring hospital user activities']
       };
+    } catch (error) {
+      console.error('Failed to get user risk score:', error);
+      return null;
     }
-
-    return null;
-  } catch (error) {
-    console.error('Error fetching user risk score:', error);
-    return null;
   }
-}
 
-/**
- * Log user activity (page navigation, actions, etc.)
- */
-export async function logUserActivity(action: string, page?: string, metadata?: any): Promise<RiskData | null> {
-  try {
-    if (!keycloakAuth.isAuthenticated()) {
-      // Fail silently for activity logging
+  // Initialize risk assessment for user - simplified
+  async initializeUserRisk(): Promise<RiskData | null> {
+    if (!auth.isAuthenticated()) {
       return null;
     }
 
-    const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null;
-    if (!token) {
-      // Fail silently for activity logging
-      return null;
-    }
-
-    const user = keycloakAuth.getCurrentUser();
-    const userId = user?.sub || user?.id;
-    
-    if (!userId) {
-      return null;
-    }
-
-    // Check user roles to determine if this should affect risk
-    const userRoles = keycloakAuth.getUserRoles();
-    const isPrivilegedUser = userRoles.includes('admin') || userRoles.includes('manager');
-
-    // Don't log sensitive page access for admin/manager users
-    if (isPrivilegedUser && action === 'page_access' && page) {
-      const sensitivePaths = [
-        '/dashboard/users/management',
-        '/dashboard/policies',
-        '/dashboard/access-control',
-        '/dashboard/audit',
-        '/dashboard/behavioral-monitoring'
-      ];
+    try {
+      const user = auth.getCurrentUser();
       
-      if (sensitivePaths.some(path => page.includes(path))) {
-        // Still log the activity but it won't increase risk
-
-      }
-    }
-
-    const response = await fetch(`${BACKEND_URL}/api/risk/log-activity`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        action,
-        page,
-        metadata
-      })
-    });
-
-    if (!response.ok) {
-      // Log warning but don't throw error for activity logging
-
+      // For admin console, just return success without backend call
+      return {
+        userId: 'admin',
+        username: user?.username || 'admin',
+        riskScore: 10, // Very low risk for admin user
+        riskLevel: 'low',
+        lastActivity: new Date().toISOString(),
+        riskFactors: [],
+        recommendations: ['Hospital admin console access initialized']
+      };
+    } catch (error) {
+      console.error('Failed to initialize user risk:', error);
       return null;
     }
+  }
 
-    const data = await response.json();
+  // Calculate risk score based on activity patterns - simplified
+  calculateRiskScore(activities: UserActivity[]): number {
+    if (!activities.length) return 10; // Very low risk for no activity
+
+    // For admin console, most activities are considered low risk
+    const baseScore = 10;
+    const recentActivities = activities.filter(
+      a => new Date(a.timestamp) > new Date(Date.now() - 24 * 60 * 60 * 1000)
+    );
+
+    // Slight increase for high activity volume
+    const activityMultiplier = Math.min(recentActivities.length * 2, 20);
     
-    if (data.success) {
-      const riskData: RiskData = {
-        userId: data.userId,
-        riskScore: data.riskScore,
-        riskLevel: data.riskLevel,
-        timestamp: data.timestamp
-      };
+    return Math.min(baseScore + activityMultiplier, 100);
+  }
 
-      // Update cache
-      riskCache.set(userId, {
-        data: riskData,
-        expiry: Date.now() + CACHE_DURATION
-      });
+  // Get risk level from score
+  getRiskLevel(score: number): 'low' | 'medium' | 'high' {
+    if (score <= RISK_THRESHOLDS.LOW) return 'low';
+    if (score <= RISK_THRESHOLDS.MEDIUM) return 'medium';
+    return 'high';
+  }
 
-      return riskData;
+  // Log high-risk activity - simplified for admin console
+  async logHighRiskActivity(action: string, resource: string, reason: string): Promise<void> {
+    // For admin console, we don't need to track high-risk activities
+    // Just log to console for debugging
+    console.log('High-risk activity logged:', { action, resource, reason });
+  }
+
+  // Get user activities for risk assessment - simplified
+  async getUserActivities(username?: string, limit: number = 50): Promise<UserActivity[]> {
+    if (!auth.isAuthenticated()) {
+      return [];
     }
 
-    return null;
-  } catch (error) {
+    try {
+      // For admin console, return empty array since we don't need complex activity tracking
+      return [];
+    } catch (error) {
+      console.error('Failed to get user activities:', error);
+      return [];
+    }
+  }
 
-    return null;
+  // Generate risk recommendations
+  generateRecommendations(riskData: RiskData): string[] {
+    const recommendations: string[] = [];
+
+    if (riskData.riskLevel === 'high') {
+      recommendations.push('Immediate security review required');
+      recommendations.push('Consider implementing additional authentication factors');
+    } else if (riskData.riskLevel === 'medium') {
+      recommendations.push('Monitor user activity closely');
+      recommendations.push('Review recent access patterns');
+    } else {
+      recommendations.push('Continue regular monitoring');
+      recommendations.push('Maintain current security protocols');
+    }
+
+    return recommendations;
   }
 }
 
-/**
- * Initialize user risk score on first login
- */
-export async function initializeUserRisk(): Promise<RiskData | null> {
-  try {
-    if (!keycloakAuth.isAuthenticated()) {
-      throw new Error('User not authenticated');
-    }
+// Export singleton instance
+export const riskService = new RiskService();
 
-    const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null;
-    if (!token) {
-      throw new Error('No access token available');
-    }
-
-    const response = await fetch(`${BACKEND_URL}/api/risk/initialize`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      }
-    });
-
-    if (!response.ok) {
-      throw new Error(`Failed to initialize user risk: ${response.status}`);
-    }
-
-    const data = await response.json();
-    
-    if (data.success) {
-      return {
-        userId: data.userId,
-        riskScore: data.initialRiskScore,
-        riskLevel: data.riskLevel,
-        timestamp: new Date().toISOString()
-      };
-    }
-
-    return null;
-  } catch (error) {
-
-    return null;
-  }
-}
-
-/**
- * Get risk summary for all users (admin/manager only)
- */
-export async function getRiskSummary(): Promise<RiskSummary | null> {
-  try {
-    if (!keycloakAuth.isAuthenticated()) {
-      throw new Error('User not authenticated');
-    }
-
-    const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null;
-    if (!token) {
-      throw new Error('No access token available');
-    }
-
-    const response = await fetch(`${BACKEND_URL}/api/risk/summary`, {
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      }
-    });
-
-    if (!response.ok) {
-      if (response.status === 403) {
-        throw new Error('Insufficient permissions to view risk summary');
-      }
-      throw new Error(`Failed to fetch risk summary: ${response.status}`);
-    }
-
-    const data = await response.json();
-    
-    if (data.success) {
-      return {
-        stats: data.stats,
-        users: data.users
-      };
-    }
-
-    return null;
-  } catch (error) {
-
-    return null;
-  }
-}
-
-/**
- * Calculate risk level from score
- */
-export function calculateRiskLevel(riskScore: number): 'low' | 'medium' | 'high' {
-  if (riskScore >= 70) return 'high';
-  if (riskScore >= 40) return 'medium';
-  return 'low';
-}
-
-/**
- * Get risk color for UI display
- */
-export function getRiskColor(riskLevel: 'low' | 'medium' | 'high'): string {
-  switch (riskLevel) {
-    case 'high': return 'red';
-    case 'medium': return 'orange';
-    case 'low': return 'green';
-    default: return 'gray';
-  }
-}
-
-/**
- * Clear risk cache (useful when user logs out)
- */
-export function clearRiskCache(): void {
-  riskCache.clear();
-} 
+// Export helper functions for backward compatibility
+export const logUserActivity = riskService.logUserActivity.bind(riskService);
+export const getCurrentUserRiskScore = riskService.getCurrentUserRiskScore.bind(riskService);
+export const initializeUserRisk = riskService.initializeUserRisk.bind(riskService); 

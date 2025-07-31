@@ -1,358 +1,153 @@
 "use client"
 
-import Link from "next/link"
 import { useState, useEffect } from "react"
-import {
-  Shield,
-  Menu,
-  X,
-  Home,
-  Activity,
-  Users,
-  Lock,
-  Network,
-  Database,
-  HelpCircle,
-  BookOpen,
-  MessageSquare,
-  AlertTriangle,
-  User,
-  LogOut,
-  Briefcase,
-} from "lucide-react"
+import Link from "next/link"
 import { Button } from "@/components/ui/button"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
-import { keycloakAuth } from "@/lib/keycloak"
-import { AuthorizedComponent } from "@/components/AuthorizedComponent"
+import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
+import { Badge } from "@/components/ui/badge"
+import { 
+  Menu, 
+  Shield, 
+  Users, 
+  BarChart3, 
+  FileText, 
+  Settings, 
+  LogOut, 
+  Bell,
+  Network,
+  Activity,
+  Hospital
+} from "lucide-react"
+import { auth } from "@/lib/auth"
 
 export function TopNavbar() {
-  const [isMenuOpen, setIsMenuOpen] = useState(false)
   const [user, setUser] = useState<any>(null)
-  const [mounted, setMounted] = useState(false)
+  const [userRoles, setUserRoles] = useState<string[]>([])
 
   useEffect(() => {
-    setMounted(true)
+    if (auth.isAuthenticated()) {
+      const currentUser = auth.getCurrentUser()
+      const roles = auth.getUserRoles()
+      setUser(currentUser)
+      setUserRoles(roles)
+    }
   }, [])
 
-  useEffect(() => {
-    if (!mounted) return
-
-    const loadUser = async () => {
-      // Check if user is authenticated
-      if (!keycloakAuth.isAuthenticated()) {
-        setUser(null)
-        return
-      }
-
-      // Try to get cached user info first
-      let currentUser = keycloakAuth.getCurrentUser()
-      
-      // If no cached user info but we have a token, fetch user info
-      if (!currentUser) {
-        try {
-          const userInfo = await keycloakAuth.getUserInfo()
-          localStorage.setItem('user_info', JSON.stringify(userInfo))
-          currentUser = userInfo
-        } catch (error) {
-          console.error('Failed to get user info:', error)
-          // If we can't get user info, the token might be invalid
-          keycloakAuth.logout()
-          return
-        }
-      }
-      
-      setUser(currentUser)
-    }
-
-    loadUser()
-  }, [mounted])
-
-  const toggleMenu = () => {
-    setIsMenuOpen(!isMenuOpen)
-  }
-
   const handleLogout = () => {
-    if (!mounted) return
-    keycloakAuth.logout()
-  }
-
-  // Helper function to check if user is employee
-  const isEmployee = () => {
-    if (!user) return false
-    const userRoles = keycloakAuth.getUserRoles()
-    return userRoles.includes('employee') || userRoles.includes('member')
-  }
-
-  // Don't render during SSR
-  if (!mounted) {
-    return null
+    auth.logout()
   }
 
   return (
-    <nav className="bg-white border-b border-gray-200 shadow-sm">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex justify-between h-16">
-          {/* Left side */}
-          <div className="flex items-center">
-            {/* Logo */}
-            <Link href="/dashboard" className="flex items-center space-x-3">
-              <div className="flex items-center justify-center w-8 h-8 bg-blue-600 rounded-lg">
-                <Shield className="w-5 h-5 text-white" />
-              </div>
-              <span className="hidden md:block text-xl font-bold text-gray-900">ZeroTrust</span>
+    <header className="sticky top-0 flex h-16 items-center gap-4 border-b bg-background px-4 md:px-6 z-50">
+      {/* Mobile menu */}
+      <Sheet>
+        <SheetTrigger asChild>
+          <Button
+            variant="outline"
+            size="icon"
+            className="shrink-0 md:hidden"
+          >
+            <Menu className="h-5 w-5" />
+            <span className="sr-only">Toggle navigation menu</span>
+          </Button>
+        </SheetTrigger>
+        <SheetContent side="left">
+          <nav className="grid gap-6 text-lg font-medium">
+            <Link
+              href="/dashboard"
+              className="flex items-center gap-2 text-lg font-semibold"
+            >
+              <Hospital className="h-6 w-6" />
+              <span>Hospital Analytics</span>
+            </Link>
+            
+            <Link href="/dashboard" className="hover:text-foreground">
+              Dashboard
+            </Link>
+            
+            <Link href="/dashboard/analytics" className="text-muted-foreground hover:text-foreground">
+              Analytics
             </Link>
 
-            {/* Navigation Menu - Role-based visibility */}
-            <div className="hidden md:flex ml-10 space-x-8">
-              {/* Dashboard - Available to all authenticated users */}
-              <AuthorizedComponent resource="dashboard" action="read" showLoader={false}>
-                <Link
-                  href="/dashboard"
-                  className="flex items-center px-3 py-2 text-sm font-medium text-gray-700 hover:text-blue-600 hover:bg-gray-50 rounded-md transition-colors"
-                >
-                  <Home className="w-4 h-4 mr-2" />
-                  Dashboard
-                </Link>
-              </AuthorizedComponent>
+            <Link href="/dashboard/users" className="text-muted-foreground hover:text-foreground">
+              Hospital Users
+            </Link>
 
-              {/* Work - Only employees */}
-              {isEmployee() && (
-                <Link
-                  href="/dashboard/work"
-                  className="flex items-center px-3 py-2 text-sm font-medium text-gray-700 hover:text-blue-600 hover:bg-gray-50 rounded-md transition-colors"
-                >
-                  <Briefcase className="w-4 h-4 mr-2" />
-                  Work
-                </Link>
-              )}
+            <Link href="/dashboard/audit" className="text-muted-foreground hover:text-foreground">
+              User Activity
+            </Link>
 
-              {/* Analytics - Only managers and admins */}
-              <AuthorizedComponent resource="analytics" action="read" showLoader={false}>
-                <Link
-                  href="/dashboard/analytics"
-                  className="flex items-center px-3 py-2 text-sm font-medium text-gray-700 hover:text-blue-600 hover:bg-gray-50 rounded-md transition-colors"
-                >
-                  <Activity className="w-4 h-4 mr-2" />
-                  Analytics
-                </Link>
-              </AuthorizedComponent>
+            <Link href="/dashboard/behavioral-monitoring" className="text-muted-foreground hover:text-foreground">
+              Behavior Analysis
+            </Link>
 
-              {/* Users - Only managers and admins */}
-              <AuthorizedComponent resource="users" action="read" showLoader={false}>
-                <Link
-                  href="/dashboard/users"
-                  className="flex items-center px-3 py-2 text-sm font-medium text-gray-700 hover:text-blue-600 hover:bg-gray-50 rounded-md transition-colors"
-                >
-                  <Users className="w-4 h-4 mr-2" />
-                  Users
-                </Link>
-              </AuthorizedComponent>
+            <Link href="/dashboard/risk-scores" className="text-muted-foreground hover:text-foreground">
+              Risk Assessment
+            </Link>
+          </nav>
+        </SheetContent>
+      </Sheet>
+      
+      {/* Logo and title - Desktop */}
+      <Link href="/dashboard" className="flex items-center gap-2">
+        <Hospital className="h-6 w-6" />
+        <span className="font-bold hidden sm:inline-block">Hospital Analytics Admin Console</span>
+      </Link>
+      
+      {/* Desktop Navigation */}
+      <nav className="hidden md:flex items-center gap-6 text-sm font-medium flex-1">
+        <Link href="/dashboard" className="text-foreground hover:text-foreground/80 transition-colors">
+          Dashboard
+        </Link>
+        
+        <Link href="/dashboard/analytics" className="text-muted-foreground hover:text-foreground transition-colors">
+          Analytics
+        </Link>
 
-              {/* Policies - All users can read, but employees limited */}
-              <AuthorizedComponent resource="policies" action="read" showLoader={false}>
-                <Link
-                  href="/dashboard/policies"
-                  className="flex items-center px-3 py-2 text-sm font-medium text-gray-700 hover:text-blue-600 hover:bg-gray-50 rounded-md transition-colors"
-                >
-                  <Lock className="w-4 h-4 mr-2" />
-                  Policies
-                </Link>
-              </AuthorizedComponent>
+        <Link href="/dashboard/users" className="text-muted-foreground hover:text-foreground transition-colors">
+          Hospital Users
+        </Link>
 
-              {/* Integrations - Only managers and admins */}
-              <AuthorizedComponent resource="integrations" action="read" showLoader={false}>
-                <Link
-                  href="/dashboard/integrations"
-                  className="flex items-center px-3 py-2 text-sm font-medium text-gray-700 hover:text-blue-600 hover:bg-gray-50 rounded-md transition-colors"
-                >
-                  <Network className="w-4 h-4 mr-2" />
-                  Integrations
-                </Link>
-              </AuthorizedComponent>
+        <Link href="/dashboard/audit" className="text-muted-foreground hover:text-foreground transition-colors">
+          User Activity
+        </Link>
 
-              {/* Audit Logs - Only managers and admins */}
-              <AuthorizedComponent resource="audit" action="read" showLoader={false}>
-                <Link
-                  href="/dashboard/audit"
-                  className="flex items-center px-3 py-2 text-sm font-medium text-gray-700 hover:text-blue-600 hover:bg-gray-50 rounded-md transition-colors"
-                >
-                  <Database className="w-4 h-4 mr-2" />
-                  Audit Logs
-                </Link>
-              </AuthorizedComponent>
-            </div>
-          </div>
+        <Link href="/dashboard/behavioral-monitoring" className="text-muted-foreground hover:text-foreground transition-colors">
+          Behavior Analysis
+        </Link>
 
-          {/* Right side */}
-          <div className="flex items-center space-x-4">
-            {/* Help Menu */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm" className="text-gray-500 hover:text-gray-700">
-                  <HelpCircle className="w-5 h-5" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-48">
-                <DropdownMenuItem>
-                  <BookOpen className="w-4 h-4 mr-2" />
-                  Documentation
-                </DropdownMenuItem>
-                <DropdownMenuItem>
-                  <MessageSquare className="w-4 h-4 mr-2" />
-                  Support
-                </DropdownMenuItem>
-                <DropdownMenuItem>
-                  <AlertTriangle className="w-4 h-4 mr-2" />
-                  Report Issue
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+        <Link href="/dashboard/risk-scores" className="text-muted-foreground hover:text-foreground transition-colors">
+          Risk Assessment
+        </Link>
+      </nav>
 
-            {/* User Menu */}
-            {user && (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="sm" className="flex items-center space-x-2">
-                    <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
-                      <User className="w-4 h-4 text-blue-600" />
-                    </div>
-                    <span className="hidden md:block text-sm font-medium text-gray-700">
-                      {user.preferred_username || user.name || user.email || "User"}
-                    </span>
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-48">
-                  <DropdownMenuItem disabled>
-                    <User className="w-4 h-4 mr-2" />
-                    {user.preferred_username || user.name || user.email || "User"}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={handleLogout}>
-                    <LogOut className="w-4 h-4 mr-2" />
-                    Sign Out
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            )}
-
-            {/* Mobile menu button */}
-            <Button variant="ghost" size="sm" className="md:hidden" onClick={toggleMenu}>
-              {isMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-            </Button>
-          </div>
-        </div>
-
-        {/* Mobile menu - Role-based visibility */}
-        {isMenuOpen && (
-          <div className="md:hidden">
-            <div className="px-2 pt-2 pb-3 space-y-1 bg-white border-t border-gray-200">
-              {/* Dashboard - Available to all authenticated users */}
-              <AuthorizedComponent resource="dashboard" action="read" showLoader={false}>
-                <Link
-                  href="/dashboard"
-                  className="flex items-center px-3 py-2 text-sm font-medium text-gray-700 hover:text-blue-600 hover:bg-gray-50 rounded-md"
-                  onClick={() => setIsMenuOpen(false)}
-                >
-                  <Home className="w-4 h-4 mr-2" />
-                  Dashboard
-                </Link>
-              </AuthorizedComponent>
-
-              {/* Work - Only employees */}
-              {isEmployee() && (
-                <Link
-                  href="/dashboard/work"
-                  className="flex items-center px-3 py-2 text-sm font-medium text-gray-700 hover:text-blue-600 hover:bg-gray-50 rounded-md"
-                  onClick={() => setIsMenuOpen(false)}
-                >
-                  <Briefcase className="w-4 h-4 mr-2" />
-                  Work
-                </Link>
-              )}
-
-              {/* Analytics - Only managers and admins */}
-              <AuthorizedComponent resource="analytics" action="read" showLoader={false}>
-                <Link
-                  href="/dashboard/analytics"
-                  className="flex items-center px-3 py-2 text-sm font-medium text-gray-700 hover:text-blue-600 hover:bg-gray-50 rounded-md"
-                  onClick={() => setIsMenuOpen(false)}
-                >
-                  <Activity className="w-4 h-4 mr-2" />
-                  Analytics
-                </Link>
-              </AuthorizedComponent>
-
-              {/* Users - Only managers and admins */}
-              <AuthorizedComponent resource="users" action="read" showLoader={false}>
-                <Link
-                  href="/dashboard/users"
-                  className="flex items-center px-3 py-2 text-sm font-medium text-gray-700 hover:text-blue-600 hover:bg-gray-50 rounded-md"
-                  onClick={() => setIsMenuOpen(false)}
-                >
-                  <Users className="w-4 h-4 mr-2" />
-                  Users
-                </Link>
-              </AuthorizedComponent>
-
-              {/* Policies - All users can read, but employees limited */}
-              <AuthorizedComponent resource="policies" action="read" showLoader={false}>
-                <Link
-                  href="/dashboard/policies"
-                  className="flex items-center px-3 py-2 text-sm font-medium text-gray-700 hover:text-blue-600 hover:bg-gray-50 rounded-md"
-                  onClick={() => setIsMenuOpen(false)}
-                >
-                  <Lock className="w-4 h-4 mr-2" />
-                  Policies
-                </Link>
-              </AuthorizedComponent>
-
-              {/* Integrations - Only managers and admins */}
-              <AuthorizedComponent resource="integrations" action="read" showLoader={false}>
-                <Link
-                  href="/dashboard/integrations"
-                  className="flex items-center px-3 py-2 text-sm font-medium text-gray-700 hover:text-blue-600 hover:bg-gray-50 rounded-md"
-                  onClick={() => setIsMenuOpen(false)}
-                >
-                  <Network className="w-4 h-4 mr-2" />
-                  Integrations
-                </Link>
-              </AuthorizedComponent>
-
-              {/* Audit Logs - Only managers and admins */}
-              <AuthorizedComponent resource="audit" action="read" showLoader={false}>
-                <Link
-                  href="/dashboard/audit"
-                  className="flex items-center px-3 py-2 text-sm font-medium text-gray-700 hover:text-blue-600 hover:bg-gray-50 rounded-md"
-                  onClick={() => setIsMenuOpen(false)}
-                >
-                  <Database className="w-4 h-4 mr-2" />
-                  Audit Logs
-                </Link>
-              </AuthorizedComponent>
-
-              {/* Mobile user actions */}
-              {user && (
-                <div className="border-t border-gray-200 pt-4">
-                  <div className="px-3 py-2 text-sm text-gray-600">
-                    Signed in as {user.preferred_username || user.name || user.email || "User"}
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="w-full justify-start text-red-600 hover:text-red-700 hover:bg-red-50"
-                    onClick={() => {
-                      setIsMenuOpen(false)
-                      handleLogout()
-                    }}
-                  >
-                    <LogOut className="w-4 h-4 mr-2" />
-                    Sign Out
-                  </Button>
-                </div>
-              )}
+      {/* User info and actions */}
+      <div className="flex items-center gap-4">
+        {user && (
+          <div className="hidden md:flex items-center gap-2">
+            <div className="text-sm">
+              <div className="font-medium">{user.name || user.username}</div>
+              <div className="text-muted-foreground text-xs flex gap-1">
+                <Badge variant="destructive" className="text-xs">
+                  Admin
+                </Badge>
+              </div>
             </div>
           </div>
         )}
+        
+        <Button variant="outline" size="sm" asChild>
+          <Link href="/dashboard/profile">
+            <Settings className="h-4 w-4" />
+            <span className="sr-only">Settings</span>
+          </Link>
+        </Button>
+        
+        <Button variant="outline" size="sm" onClick={handleLogout}>
+          <LogOut className="h-4 w-4" />
+          <span className="sr-only">Logout</span>
+        </Button>
       </div>
-    </nav>
+    </header>
   )
 }

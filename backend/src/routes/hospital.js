@@ -3,622 +3,448 @@ import mongoose from 'mongoose';
 
 const router = express.Router();
 
-// Hospital database collections (without defining schemas since we're reading existing data)
+// Helper function to get MongoDB collections
 const getCollection = (collectionName) => {
   return mongoose.connection.db.collection(collectionName);
 };
 
-/**
- * Get hospital users with filters
- */
+// Get all hospital users (aggregated from user_behavior)
 router.get('/users', async (req, res) => {
   try {
-    const { role, department, isActive, limit = 50, offset = 0 } = req.query;
+    const userBehaviorCollection = getCollection('user_behavior');
     
-    const filter = {};
-    if (role) filter.role = role;
-    if (department) filter.department = department;
-    if (isActive !== undefined) filter.isActive = isActive === 'true';
-
-    const usersCollection = getCollection('users');
-    
-    const users = await usersCollection
-      .find(filter)
-      .skip(parseInt(offset))
-      .limit(parseInt(limit))
-      .toArray();
-
-    const total = await usersCollection.countDocuments(filter);
-
-    res.json({
-      success: true,
-      users,
-      total,
-      pagination: {
-        limit: parseInt(limit),
-        offset: parseInt(offset),
-        hasMore: (parseInt(offset) + parseInt(limit)) < total
-      }
-    });
-
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: 'Failed to fetch hospital users',
-      message: error.message
-    });
-  }
-});
-
-/**
- * Get user activities with filters
- */
-router.get('/activities', async (req, res) => {
-  try {
-    const { 
-      userId, 
-      action, 
-      startDate, 
-      endDate, 
-      riskLevel, 
-      limit = 50, 
-      offset = 0 
-    } = req.query;
-    
-    const filter = {};
-    if (userId) filter.userId = userId;
-    if (action) filter.action = action;
-    if (riskLevel) filter.riskLevel = riskLevel;
-    
-    if (startDate && endDate) {
-      filter.timestamp = {
-        $gte: new Date(startDate),
-        $lte: new Date(endDate)
-      };
-    }
-
-    const activitiesCollection = getCollection('user_activities');
-    
-    const activities = await activitiesCollection
-      .find(filter)
-      .sort({ timestamp: -1 })
-      .skip(parseInt(offset))
-      .limit(parseInt(limit))
-      .toArray();
-
-    const total = await activitiesCollection.countDocuments(filter);
-
-    res.json({
-      success: true,
-      activities,
-      total,
-      pagination: {
-        limit: parseInt(limit),
-        offset: parseInt(offset),
-        hasMore: (parseInt(offset) + parseInt(limit)) < total
-      }
-    });
-
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: 'Failed to fetch user activities',
-      message: error.message
-    });
-  }
-});
-
-/**
- * Get security events with filters
- */
-router.get('/security-events', async (req, res) => {
-  try {
-    const { 
-      eventType, 
-      severity, 
-      startDate, 
-      endDate, 
-      resolved, 
-      limit = 50, 
-      offset = 0 
-    } = req.query;
-    
-    const filter = {};
-    if (eventType) filter.eventType = eventType;
-    if (severity) filter.severity = severity;
-    if (resolved !== undefined) filter.resolved = resolved === 'true';
-    
-    if (startDate && endDate) {
-      filter.timestamp = {
-        $gte: new Date(startDate),
-        $lte: new Date(endDate)
-      };
-    }
-
-    const eventsCollection = getCollection('security_events');
-    
-    const events = await eventsCollection
-      .find(filter)
-      .sort({ timestamp: -1 })
-      .skip(parseInt(offset))
-      .limit(parseInt(limit))
-      .toArray();
-
-    const total = await eventsCollection.countDocuments(filter);
-
-    res.json({
-      success: true,
-      events,
-      total,
-      pagination: {
-        limit: parseInt(limit),
-        offset: parseInt(offset),
-        hasMore: (parseInt(offset) + parseInt(limit)) < total
-      }
-    });
-
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: 'Failed to fetch security events',
-      message: error.message
-    });
-  }
-});
-
-/**
- * Get risk assessment for a specific user
- */
-router.get('/risk-assessment/:userId', async (req, res) => {
-  try {
-    const { userId } = req.params;
-    
-    const riskCollection = getCollection('risk_assessments');
-    const assessment = await riskCollection
-      .findOne({ userId }, { sort: { timestamp: -1 } });
-
-    if (!assessment) {
-      return res.status(404).json({
-        success: false,
-        error: 'Risk assessment not found'
-      });
-    }
-
-    res.json({
-      success: true,
-      assessment
-    });
-
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: 'Failed to fetch risk assessment',
-      message: error.message
-    });
-  }
-});
-
-/**
- * Get high risk users
- */
-router.get('/high-risk-users', async (req, res) => {
-  try {
-    const { limit = 10 } = req.query;
-    
-    const riskCollection = getCollection('risk_assessments');
-    const usersCollection = getCollection('users');
-    
-    // Get latest risk assessments for each user
+    // Aggregate users from user_behavior to get unique users with their latest data
     const pipeline = [
       {
-        $sort: { userId: 1, timestamp: -1 }
+        $sort: { timestamp: -1 }
       },
       {
         $group: {
-          _id: '$userId',
-          latestAssessment: { $first: '$$ROOT' }
+          _id: "$userId",
+          name: { $first: "$username" },
+          email: { $first: "$email" },
+          roles: { $first: "$roles" },
+          lastActive: { $first: "$timestamp" },
+          totalActivities: { $sum: 1 },
+          avgRiskScore: { $avg: "$riskScore" },
+          lastRiskLevel: { $first: "$riskLevel" },
+          lastIpAddress: { $first: "$ipAddress" }
         }
       },
       {
-        $match: {
-          'latestAssessment.riskLevel': { $in: ['high', 'medium'] }
+        $project: {
+          id: "$_id",
+          name: "$name",
+          email: "$email",
+          department: {
+            $cond: {
+              if: { $in: ["admin", "$roles"] },
+              then: "Administration",
+              else: {
+                $cond: {
+                  if: { $in: ["doctor", "$roles"] },
+                  then: "Medical",
+                  else: {
+                    $cond: {
+                      if: { $in: ["nurse", "$roles"] },
+                      then: "Nursing",
+                      else: "General"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          role: {
+            $cond: {
+              if: { $in: ["admin", "$roles"] },
+              then: "Admin",
+              else: {
+                $cond: {
+                  if: { $in: ["manager", "$roles"] },
+                  then: "Manager",
+                  else: {
+                    $cond: {
+                      if: { $in: ["employee", "$roles"] },
+                      then: "Employee",
+                      else: "User"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          status: {
+            $cond: {
+              if: { $gte: ["$lastActive", { $subtract: [new Date(), 24 * 60 * 60 * 1000] }] },
+              then: "active",
+              else: "inactive"
+            }
+          },
+          riskLevel: "$lastRiskLevel",
+          riskScore: { $round: [{ $multiply: ["$avgRiskScore", 100] }, 0] },
+          lastActive: "$lastActive",
+          totalActivities: "$totalActivities"
         }
       },
-      {
-        $sort: { 'latestAssessment.riskScore': -1 }
-      },
-      {
-        $limit: parseInt(limit)
-      }
+      { $sort: { lastActive: -1 } }
     ];
 
-    const riskUsers = await riskCollection.aggregate(pipeline).toArray();
-    
-    // Get user details
-    const userIds = riskUsers.map(ru => ru._id);
-    const users = await usersCollection
-      .find({ _id: { $in: userIds } })
-      .toArray();
-
-    const result = riskUsers.map(ru => {
-      const user = users.find(u => u._id.toString() === ru._id);
-      return {
-        userId: ru._id,
-        username: user?.username || 'Unknown',
-        riskScore: ru.latestAssessment.riskScore,
-        riskLevel: ru.latestAssessment.riskLevel,
-        lastActivity: ru.latestAssessment.timestamp
-      };
-    });
+    const users = await userBehaviorCollection.aggregate(pipeline).toArray();
 
     res.json({
       success: true,
-      users: result
+      data: users,
+      count: users.length
     });
-
   } catch (error) {
+    console.error('Error retrieving users:', error);
     res.status(500).json({
       success: false,
-      error: 'Failed to fetch high risk users',
+      error: 'Failed to retrieve users',
       message: error.message
     });
   }
 });
 
-/**
- * Get dashboard metrics
- */
-router.get('/dashboard-metrics', async (req, res) => {
+// Get user statistics
+router.get('/users/stats', async (req, res) => {
   try {
-    const usersCollection = getCollection('users');
-    const activitiesCollection = getCollection('user_activities');
-    const eventsCollection = getCollection('security_events');
-    const riskCollection = getCollection('risk_assessments');
-
-    // Calculate metrics
-    const totalUsers = await usersCollection.countDocuments();
-    const activeUsers = await usersCollection.countDocuments({ isActive: true });
+    const userBehaviorCollection = getCollection('user_behavior');
     
-    const last24Hours = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    const securityEvents = await eventsCollection.countDocuments({
-      timestamp: { $gte: last24Hours }
-    });
-    
-    const riskEvents = await eventsCollection.countDocuments({
-      timestamp: { $gte: last24Hours },
-      severity: { $in: ['high', 'critical'] }
-    });
-
-    // Calculate average risk score
-    const avgRiskPipeline = [
-      {
-        $sort: { userId: 1, timestamp: -1 }
-      },
+    const pipeline = [
       {
         $group: {
-          _id: '$userId',
-          latestRiskScore: { $first: '$riskScore' }
+          _id: "$userId",
+          lastActive: { $max: "$timestamp" },
+          avgRiskScore: { $avg: "$riskScore" },
+          riskLevel: { $last: "$riskLevel" }
         }
       },
       {
         $group: {
           _id: null,
-          averageRiskScore: { $avg: '$latestRiskScore' }
+          totalUsers: { $sum: 1 },
+          activeUsers: {
+            $sum: {
+              $cond: [
+                { $gte: ["$lastActive", { $subtract: [new Date(), 24 * 60 * 60 * 1000] }] },
+                1,
+                0
+              ]
+            }
+          },
+          inactiveUsers: {
+            $sum: {
+              $cond: [
+                { $lt: ["$lastActive", { $subtract: [new Date(), 24 * 60 * 60 * 1000] }] },
+                1,
+                0
+              ]
+            }
+          },
+          highRiskUsers: {
+            $sum: {
+              $cond: [
+                { $eq: ["$riskLevel", "high"] },
+                1,
+                0
+              ]
+            }
+          }
         }
       }
     ];
-    
-    const avgRiskResult = await riskCollection.aggregate(avgRiskPipeline).toArray();
-    const averageRiskScore = avgRiskResult[0]?.averageRiskScore || 0;
 
-    // Get department activity
-    const departmentPipeline = [
-      {
-        $match: { timestamp: { $gte: last24Hours } }
-      },
-      {
-        $lookup: {
-          from: 'users',
-          localField: 'userId',
-          foreignField: '_id',
-          as: 'user'
-        }
-      },
-      {
-        $unwind: '$user'
-      },
-      {
-        $group: {
-          _id: '$user.department',
-          activityCount: { $sum: 1 },
-          avgRiskScore: { $avg: '$riskScore' }
-        }
-      },
-      {
-        $sort: { activityCount: -1 }
-      }
-    ];
+    const result = await userBehaviorCollection.aggregate(pipeline).toArray();
+    const stats = result[0] || {
+      totalUsers: 0,
+      activeUsers: 0,
+      inactiveUsers: 0,
+      highRiskUsers: 0
+    };
 
-    const departmentActivity = await activitiesCollection.aggregate(departmentPipeline).toArray();
-
-    // Get recent activities
-    const recentActivities = await activitiesCollection
-      .find()
-      .sort({ timestamp: -1 })
-      .limit(10)
-      .toArray();
-
-    // Get top risk users (simplified)
-    const topRiskUsers = await riskCollection.aggregate([
-      {
-        $sort: { userId: 1, timestamp: -1 }
-      },
-      {
-        $group: {
-          _id: '$userId',
-          latestAssessment: { $first: '$$ROOT' }
-        }
-      },
-      {
-        $sort: { 'latestAssessment.riskScore': -1 }
-      },
-      {
-        $limit: 5
-      }
-    ]).toArray();
+    // Remove the _id field
+    delete stats._id;
 
     res.json({
       success: true,
-      totalUsers,
-      activeUsers,
-      securityEvents,
-      riskEvents,
-      averageRiskScore: Math.round(averageRiskScore),
-      departmentActivity: departmentActivity.map(dept => ({
-        department: dept._id || 'Unknown',
-        activityCount: dept.activityCount,
-        riskScore: Math.round(dept.avgRiskScore || 0)
-      })),
-      recentActivities,
-      topRiskUsers: topRiskUsers.map(ru => ({
-        userId: ru._id,
-        username: 'User-' + ru._id, // Placeholder - would need to lookup
-        riskScore: ru.latestAssessment.riskScore,
-        lastActivity: ru.latestAssessment.timestamp
-      }))
+      data: {
+        total: stats.totalUsers,
+        active: stats.activeUsers,
+        inactive: stats.inactiveUsers,
+        highRisk: stats.highRiskUsers
+      }
     });
-
   } catch (error) {
+    console.error('Error retrieving user stats:', error);
     res.status(500).json({
       success: false,
-      error: 'Failed to fetch dashboard metrics',
+      error: 'Failed to retrieve user statistics',
       message: error.message
     });
   }
 });
 
-/**
- * Get behavior pattern for a user
- */
-router.get('/behavior-pattern/:userId', async (req, res) => {
+// Get user activities
+router.get('/activities', async (req, res) => {
   try {
-    const { userId } = req.params;
+    const { limit = 50, userId } = req.query;
+    const userBehaviorCollection = getCollection('user_behavior');
     
-    const behaviorCollection = getCollection('behavior_patterns');
-    const pattern = await behaviorCollection.findOne({ userId });
-
-    if (!pattern) {
-      return res.status(404).json({
-        success: false,
-        error: 'Behavior pattern not found'
-      });
+    const filter = {};
+    if (userId) {
+      filter.userId = userId;
     }
 
-    res.json({
-      success: true,
-      pattern
-    });
-
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: 'Failed to fetch behavior pattern',
-      message: error.message
-    });
-  }
-});
-
-/**
- * Get anomalous users
- */
-router.get('/anomalous-users', async (req, res) => {
-  try {
-    const { limit = 20 } = req.query;
-    
-    const behaviorCollection = getCollection('behavior_patterns');
-    const usersCollection = getCollection('users');
-    
-    const anomalousPatterns = await behaviorCollection
-      .find({
-        'anomalies.0': { $exists: true } // Has at least one anomaly
-      })
-      .sort({ 'anomalies.timestamp': -1 })
+    const activities = await userBehaviorCollection
+      .find(filter)
+      .sort({ timestamp: -1 })
       .limit(parseInt(limit))
       .toArray();
 
-    const result = [];
-    for (const pattern of anomalousPatterns) {
-      const user = await usersCollection.findOne({ _id: pattern.userId });
-      if (user) {
-        result.push({
-          userId: pattern.userId,
-          username: user.username,
-          anomalies: pattern.anomalies.length,
-          lastAnomaly: pattern.anomalies[0]?.timestamp,
-          riskScore: 50 // Placeholder - would calculate based on anomalies
-        });
-      }
-    }
+    const formattedActivities = activities.map(activity => ({
+      id: activity._id.toString(),
+      userId: activity.userId,
+      user: activity.username,
+      username: activity.username,
+      email: activity.email || '',
+      roles: activity.roles || [],
+      action: activity.action || 'Unknown activity',
+      timestamp: activity.timestamp,
+      riskScore: Math.round((activity.risk_score || 0) * 100), // Convert 0-1 scale to 0-100 scale
+      risk: activity.riskLevel || 'low',
+      riskLevel: activity.riskLevel || 'low',
+      ipAddress: activity.ipAddress,
+      userAgent: activity.userAgent || '',
+      sessionId: activity.sessionId,
+      sessionPeriod: activity.sessionPeriod || 0,
+      metadata: activity.metadata || {},
+      // Additional fields for better tracking
+      createdAt: activity.createdAt,
+      updatedAt: activity.updatedAt
+    }));
 
     res.json({
       success: true,
-      users: result
+      data: formattedActivities
     });
-
   } catch (error) {
+    console.error('Error retrieving activities:', error);
     res.status(500).json({
       success: false,
-      error: 'Failed to fetch anomalous users',
+      error: 'Failed to retrieve activities',
       message: error.message
     });
   }
 });
 
-/**
- * Get department activities
- */
-router.get('/department-activities', async (req, res) => {
+// Get security events (high-risk activities)
+router.get('/security-events', async (req, res) => {
   try {
-    const { department, startDate, endDate } = req.query;
+    const { limit = 50 } = req.query;
+    const userBehaviorCollection = getCollection('user_behavior');
     
-    const filter = {};
-    if (department) filter.department = department;
-    if (startDate && endDate) {
-      filter.date = {
-        $gte: new Date(startDate),
-        $lte: new Date(endDate)
-      };
-    }
-
-    const deptCollection = getCollection('department_activities');
-    const activities = await deptCollection
-      .find(filter)
-      .sort({ date: -1 })
-      .toArray();
-
-    res.json({
-      success: true,
-      activities
-    });
-
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: 'Failed to fetch department activities',
-      message: error.message
-    });
-  }
-});
-
-/**
- * Get system metrics
- */
-router.get('/system-metrics', async (req, res) => {
-  try {
-    const { hours = 24 } = req.query;
-    
-    const startTime = new Date(Date.now() - parseInt(hours) * 60 * 60 * 1000);
-    
-    const metricsCollection = getCollection('system_metrics');
-    const metrics = await metricsCollection
+    const securityEvents = await userBehaviorCollection
       .find({
-        timestamp: { $gte: startTime }
+        $or: [
+          { riskLevel: "high" },
+          { riskLevel: "critical" },
+          { riskScore: { $gte: 0.7 } }
+        ]
       })
       .sort({ timestamp: -1 })
+      .limit(parseInt(limit))
       .toArray();
+
+    const formattedEvents = securityEvents.map(event => ({
+      id: event._id.toString(),
+      userId: event.userId,
+      username: event.username,
+      action: event.action || 'Security event',
+      timestamp: event.timestamp,
+      riskScore: Math.round((event.riskScore || 0) * 100),
+      riskLevel: event.riskLevel || 'high',
+      ipAddress: event.ipAddress,
+      userAgent: event.userAgent,
+      metadata: event.metadata || {}
+    }));
 
     res.json({
       success: true,
-      metrics
+      data: formattedEvents
     });
-
   } catch (error) {
+    console.error('Error retrieving security events:', error);
     res.status(500).json({
       success: false,
-      error: 'Failed to fetch system metrics',
+      error: 'Failed to retrieve security events',
       message: error.message
     });
   }
 });
 
-/**
- * Search users
- */
-router.get('/search/users', async (req, res) => {
+// Get risk assessment for specific user
+router.get('/risk-assessment/:userId', async (req, res) => {
   try {
-    const { search, role, department } = req.query;
+    const { userId } = req.params;
+    const userBehaviorCollection = getCollection('user_behavior');
     
-    const filter = {};
-    if (role) filter.role = role;
-    if (department) filter.department = department;
+    const pipeline = [
+      { $match: { userId: userId } },
+      { $sort: { timestamp: -1 } },
+      {
+        $group: {
+          _id: "$userId",
+          username: { $first: "$username" },
+          email: { $first: "$email" },
+          currentRiskScore: { $first: "$riskScore" },
+          currentRiskLevel: { $first: "$riskLevel" },
+          avgRiskScore: { $avg: "$riskScore" },
+          totalActivities: { $sum: 1 },
+          lastActivity: { $first: "$timestamp" },
+          riskHistory: { $push: { timestamp: "$timestamp", riskScore: "$riskScore", action: "$action" } }
+        }
+      }
+    ];
+
+    const result = await userBehaviorCollection.aggregate(pipeline).toArray();
     
-    if (search) {
-      filter.$or = [
-        { username: { $regex: search, $options: 'i' } },
-        { email: { $regex: search, $options: 'i' } },
-        { firstName: { $regex: search, $options: 'i' } },
-        { lastName: { $regex: search, $options: 'i' } }
-      ];
-    }
-
-    const usersCollection = getCollection('users');
-    const users = await usersCollection
-      .find(filter)
-      .limit(20)
-      .toArray();
-
-    res.json({
-      success: true,
-      users
-    });
-
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: 'Failed to search users',
-      message: error.message
-    });
-  }
-});
-
-/**
- * Export security report
- */
-router.get('/export/security-report', async (req, res) => {
-  try {
-    const { startDate, endDate, format = 'json' } = req.query;
-    
-    const filter = {};
-    if (startDate && endDate) {
-      filter.timestamp = {
-        $gte: new Date(startDate),
-        $lte: new Date(endDate)
-      };
-    }
-
-    const eventsCollection = getCollection('security_events');
-    const events = await eventsCollection.find(filter).toArray();
-
-    if (format === 'json') {
-      res.json({
-        success: true,
-        reportDate: new Date(),
-        period: { startDate, endDate },
-        totalEvents: events.length,
-        events
-      });
-    } else {
-      // For CSV/PDF, you would implement proper formatting here
-      res.status(400).json({
+    if (result.length === 0) {
+      return res.status(404).json({
         success: false,
-        error: 'Only JSON format is currently supported'
+        error: 'User not found'
       });
     }
 
+    const userRisk = result[0];
+    
+    res.json({
+      success: true,
+      data: {
+        userId: userRisk._id,
+        username: userRisk.username,
+        email: userRisk.email,
+        currentRiskScore: Math.round((userRisk.currentRiskScore || 0) * 100),
+        currentRiskLevel: userRisk.currentRiskLevel,
+        averageRiskScore: Math.round((userRisk.avgRiskScore || 0) * 100),
+        totalActivities: userRisk.totalActivities,
+        lastActivity: userRisk.lastActivity,
+        riskHistory: userRisk.riskHistory.slice(0, 20) // Last 20 activities
+      }
+    });
   } catch (error) {
+    console.error('Error retrieving risk assessment:', error);
     res.status(500).json({
       success: false,
-      error: 'Failed to export security report',
+      error: 'Failed to retrieve risk assessment',
+      message: error.message
+    });
+  }
+});
+
+// Get high-risk users
+router.get('/high-risk-users', async (req, res) => {
+  try {
+    const userBehaviorCollection = getCollection('user_behavior');
+    
+    const pipeline = [
+      {
+        $match: {
+          $or: [
+            { riskLevel: "high" },
+            { riskLevel: "critical" },
+            { riskScore: { $gte: 0.7 } }
+          ]
+        }
+      },
+      { $sort: { timestamp: -1 } },
+      {
+        $group: {
+          _id: "$userId",
+          username: { $first: "$username" },
+          email: { $first: "$email" },
+          riskScore: { $first: "$riskScore" },
+          riskLevel: { $first: "$riskLevel" },
+          lastActivity: { $first: "$timestamp" },
+          totalHighRiskActivities: { $sum: 1 }
+        }
+      },
+      { $sort: { riskScore: -1 } }
+    ];
+
+    const highRiskUsers = await userBehaviorCollection.aggregate(pipeline).toArray();
+
+    const formattedUsers = highRiskUsers.map(user => ({
+      id: user._id,
+      username: user.username,
+      email: user.email,
+      riskScore: Math.round((user.riskScore || 0) * 100),
+      riskLevel: user.riskLevel,
+      lastActivity: user.lastActivity,
+      totalHighRiskActivities: user.totalHighRiskActivities
+    }));
+
+    res.json({
+      success: true,
+      data: formattedUsers
+    });
+  } catch (error) {
+    console.error('Error retrieving high-risk users:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to retrieve high-risk users',
+      message: error.message
+    });
+  }
+});
+
+// Get dashboard metrics
+router.get('/dashboard-metrics', async (req, res) => {
+  try {
+    const userBehaviorCollection = getCollection('user_behavior');
+    
+    const now = new Date();
+    const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+    // Get various metrics
+    const totalUsers = await userBehaviorCollection.distinct('userId').then(users => users.length);
+    const activeUsers = await userBehaviorCollection.distinct('userId', { timestamp: { $gte: oneDayAgo } }).then(users => users.length);
+    const totalActivities = await userBehaviorCollection.countDocuments({ timestamp: { $gte: oneDayAgo } });
+    const highRiskEvents = await userBehaviorCollection.countDocuments({ 
+      timestamp: { $gte: oneWeekAgo },
+      $or: [
+        { riskLevel: "high" },
+        { riskLevel: "critical" },
+        { riskScore: { $gte: 0.7 } }
+      ]
+    });
+
+    // Calculate average risk score
+    const riskPipeline = [
+      { $group: { _id: null, avgRisk: { $avg: "$riskScore" } } }
+    ];
+    const riskResult = await userBehaviorCollection.aggregate(riskPipeline).toArray();
+    const avgRiskScore = riskResult[0]?.avgRisk || 0;
+
+    res.json({
+      success: true,
+      data: {
+        totalUsers,
+        activeUsers,
+        totalActivities,
+        highRiskEvents,
+        averageRiskScore: Math.round(avgRiskScore * 100),
+        uptime: "99.9%", // Mock uptime
+        lastUpdate: new Date()
+      }
+    });
+  } catch (error) {
+    console.error('Error retrieving dashboard metrics:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to retrieve dashboard metrics',
       message: error.message
     });
   }
