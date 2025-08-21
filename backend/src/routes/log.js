@@ -1,5 +1,6 @@
 import express from 'express';
 import mongoose from 'mongoose';
+import fetch from 'node-fetch';
 
 const router = express.Router();
 
@@ -15,12 +16,25 @@ const logSchema = new mongoose.Schema({
   action: String,
   sessionId: String,
   riskLevel: String,
-  riskScore: { type: Number, min: 0, max: 100, default: 30 },
+  riskScore: { type: Number, min: 0, max: 100, default: 0 },
   success: { type: Boolean, default: true },
   metadata: {
     realm: String,
     clientId: String,
     tokenType: String
+  },
+  // ML Prediction fields
+  mlPredicted: { type: Boolean, default: false },
+  mlRiskScore: { type: Number, min: 0, max: 100, default: null },
+  mlRiskLevel: { type: String, default: null },
+  mlPredictedAt: { type: Date, default: null },
+  mlFeatures: {
+    ip_region: String,
+    device_type: String,
+    user_role: String,
+    action: String,
+    hour: Number,
+    sessionPeriod: Number
   }
 });
 
@@ -294,6 +308,184 @@ router.get('/users', async (req, res) => {
       success: false, 
       error: 'Error retrieving users',
       message: err.message 
+    });
+  }
+});
+
+// ML Service Configuration
+const ML_SERVICE_URL = process.env.ML_SERVICE_URL || 'http://localhost:8000';
+
+// Endpoint to trigger ML prediction for all logs
+router.post('/predict-all', async (req, res) => {
+  try {
+    const { limit = 1000, skipPredicted = true } = req.body;
+    
+    console.log('🧠 Starting batch ML prediction for audit logs...');
+    
+    // Build query - skip already predicted logs if requested
+    let query = {};
+    if (skipPredicted) {
+      query.mlPredicted = { $ne: true };
+    }
+    
+    // Fetch logs for prediction
+    const logs = await Log.find(query)
+      .sort({ timestamp: -1 })
+      .limit(parseInt(limit));
+    
+    console.log(`📊 Found ${logs.length} logs to process`);
+    
+    if (logs.length === 0) {
+      return res.json({
+        success: true,
+        message: 'No logs found for prediction',
+        processed: 0,
+        updated: 0
+      });
+    }
+    
+    // Prepare logs for ML service
+    const logsForPrediction = logs.map(log => ({
+      _id: log._id.toString(),
+      username: log.username,
+      userId: log.userId,
+      email: log.email,
+      roles: log.roles,
+      ipAddress: log.ipAddress,
+      userAgent: log.userAgent,
+      timestamp: log.timestamp,
+      action: log.action,
+      sessionId: log.sessionId,
+      sessionPeriod: 15, // Default session period
+      metadata: log.metadata
+    }));
+    
+    // Call ML service
+    console.log('🔮 Calling ML service for predictions...');
+    const mlResponse = await fetch(`${ML_SERVICE_URL}/predict-audit-logs`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(logsForPrediction)
+    });
+    
+    if (!mlResponse.ok) {
+      throw new Error(`ML service error: ${mlResponse.status} ${mlResponse.statusText}`);
+    }
+    
+    const mlResults = await mlResponse.json();
+    console.log(`✅ ML service processed ${mlResults.total_processed} logs`);
+    
+    // Update logs in MongoDB with predictions
+    let updateCount = 0;
+    for (const prediction of mlResults.predictions) {
+      try {
+        const updateData = {
+          mlPredicted: true,
+          mlRiskScore: Math.round(prediction.risk_score * 100), // Convert to percentage
+          mlRiskLevel: prediction.risk_level,
+          mlPredictedAt: new Date(),
+          riskScore: Math.round(prediction.risk_score * 100), // Update main risk score too
+          riskLevel: prediction.risk_level,
+          mlFeatures: prediction.mapped_features
+        };
+        
+        await Log.findByIdAndUpdate(prediction.log_id, updateData);
+        updateCount++;
+      } catch (updateError) {
+        console.error(`Error updating log ${prediction.log_id}:`, updateError.message);
+      }
+    }
+    
+    console.log(`📝 Updated ${updateCount} logs in MongoDB`);
+    
+    res.json({
+      success: true,
+      message: 'Batch ML prediction completed',
+      processed: mlResults.total_processed,
+      updated: updateCount,
+      ml_predicted: mlResults.ml_predicted_count,
+      fallback: mlResults.fallback_count,
+      timestamp: new Date()
+    });
+    
+  } catch (error) {
+    console.error('❌ Batch ML prediction failed:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Batch ML prediction failed',
+      message: error.message
+    });
+  }
+});
+
+// Endpoint to get prediction status
+router.get('/prediction-status', async (req, res) => {
+  try {
+    const totalLogs = await Log.countDocuments({});
+    const predictedLogs = await Log.countDocuments({ mlPredicted: true });
+    const unpredictedLogs = totalLogs - predictedLogs;
+    
+    // Get recent predictions
+    const recentPredictions = await Log.find({ mlPredicted: true })
+      .sort({ mlPredictedAt: -1 })
+      .limit(10)
+      .select('username action mlRiskScore mlRiskLevel mlPredictedAt');
+    
+    res.json({
+      success: true,
+      status: {
+        totalLogs,
+        predictedLogs,
+        unpredictedLogs,
+        percentagePredicted: totalLogs > 0 ? Math.round((predictedLogs / totalLogs) * 100) : 0
+      },
+      recentPredictions,
+      lastUpdate: predictedLogs > 0 ? recentPredictions[0]?.mlPredictedAt : null
+    });
+    
+  } catch (error) {
+    console.error('Error getting prediction status:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to get prediction status',
+      message: error.message
+    });
+  }
+});
+
+// Endpoint to reset ML predictions (for testing)
+router.post('/reset-predictions', async (req, res) => {
+  try {
+    const result = await Log.updateMany(
+      {},
+      {
+        $unset: {
+          mlPredicted: 1,
+          mlRiskScore: 1,
+          mlRiskLevel: 1,
+          mlPredictedAt: 1,
+          mlFeatures: 1
+        },
+        $set: {
+          riskScore: 0 // Reset to default
+        }
+      }
+    );
+    
+    res.json({
+      success: true,
+      message: 'ML predictions reset successfully',
+      modifiedCount: result.modifiedCount
+    });
+    
+  } catch (error) {
+    console.error('Error resetting predictions:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to reset predictions',
+      message: error.message
     });
   }
 });

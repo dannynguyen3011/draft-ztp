@@ -16,7 +16,8 @@ import {
   Bell,
   Network,
   Activity,
-  Hospital
+  Hospital,
+  Brain
 } from "lucide-react"
 import { auth } from "@/lib/auth"
 
@@ -84,6 +85,8 @@ export function TopNavbar() {
             <Link href="/dashboard/risk-scores" className="text-muted-foreground hover:text-foreground">
               Risk Assessment
             </Link>
+
+
           </nav>
         </SheetContent>
       </Sheet>
@@ -119,6 +122,8 @@ export function TopNavbar() {
         <Link href="/dashboard/risk-scores" className="text-muted-foreground hover:text-foreground transition-colors">
           Risk Assessment
         </Link>
+
+
       </nav>
 
       {/* User info and actions */}

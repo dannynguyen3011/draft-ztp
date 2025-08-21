@@ -67,7 +67,7 @@ app.use(express.json());
 app.use(simpleAuth);
 
 // Routes
-app.use('/api/log', logRouter);
+app.use('/api/logs', logRouter);
 app.use('/api/protected', protectedOpaRouter);
 app.use('/api/risk', riskRouter);
 app.use('/api/hospital', hospitalRouter); // New hospital routes

@@ -55,10 +55,17 @@ const convertBackendLogToAuditLog = (backendLog: any): AuditLog => {
       sessionPeriod: backendLog.sessionPeriod,
       metadata: backendLog.metadata,
       createdAt: backendLog.createdAt,
-      updatedAt: backendLog.updatedAt
+      updatedAt: backendLog.updatedAt,
+      // ML Prediction fields
+      mlPredicted: backendLog.mlPredicted,
+      mlRiskScore: backendLog.mlRiskScore,
+      mlRiskLevel: backendLog.mlRiskLevel,
+      mlPredictedAt: backendLog.mlPredictedAt,
+      mlFeatures: backendLog.mlFeatures
     },
-    // Backend already converts riskScore from 0-1 to 0-100 scale
-    risk_score: (backendLog.riskScore !== null && backendLog.riskScore !== undefined) ? backendLog.riskScore : 
+    // Prefer ML risk score if available, otherwise use regular risk score
+    risk_score: (backendLog.mlRiskScore !== null && backendLog.mlRiskScore !== undefined) ? backendLog.mlRiskScore :
+                (backendLog.riskScore !== null && backendLog.riskScore !== undefined) ? backendLog.riskScore : 
                 (backendLog.risk_score !== null && backendLog.risk_score !== undefined) ? backendLog.risk_score : null,
   }
   

@@ -19,7 +19,7 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from "@/components/ui/pagination"
-import { AlertCircle, CheckCircle, Clock, Filter, RefreshCw, Shield, User } from "lucide-react"
+import { AlertCircle, CheckCircle, Clock, Filter, RefreshCw, Shield, User, Brain, Zap, Play, Database, TrendingUp } from "lucide-react"
 import { HospitalAuditEventType, HospitalResourceType } from "@/lib/hospital-schema"
 import { getAuditLogs, getSecurityEvents, type AuditLog } from "@/lib/audit-service"
 
@@ -54,6 +54,11 @@ export default function AuditLogsPage() {
 
   const [showFilters, setShowFilters] = useState(false)
 
+  // ML Prediction states
+  const [mlPredictionStatus, setMlPredictionStatus] = useState<any>(null)
+  const [isRunningPrediction, setIsRunningPrediction] = useState(false)
+  const [predictionResult, setPredictionResult] = useState<any>(null)
+
   // Function to fetch audit logs
   const fetchAuditLogs = useCallback(async () => {
     try {
@@ -80,6 +85,54 @@ export default function AuditLogsPage() {
       setLoading(false)
     }
   }, [filters, currentPage])
+
+  // Function to fetch ML prediction status
+  const fetchMlStatus = useCallback(async () => {
+    try {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3003'}/api/logs/prediction-status`)
+      const data = await response.json()
+      
+      if (data.success) {
+        setMlPredictionStatus(data.status)
+      }
+    } catch (err) {
+      console.error('Error fetching ML status:', err)
+    }
+  }, [])
+
+  // Function to run ML predictions
+  const runMlPredictions = async () => {
+    try {
+      setIsRunningPrediction(true)
+      setPredictionResult(null)
+
+      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3003'}/api/logs/predict-all`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          limit: 1000,
+          skipPredicted: true
+        })
+      })
+
+      const data = await response.json()
+      
+      if (data.success) {
+        setPredictionResult(data)
+        // Refresh audit logs and ML status after prediction
+        setTimeout(() => {
+          fetchAuditLogs()
+          fetchMlStatus()
+        }, 1000)
+      }
+    } catch (err) {
+      console.error('Error running ML predictions:', err)
+    } finally {
+      setIsRunningPrediction(false)
+    }
+  }
 
   // Function to fetch security events
   const fetchSecurityEvents = useCallback(async () => {
@@ -110,14 +163,15 @@ export default function AuditLogsPage() {
       return
     }
 
-    if (user) {
+        if (user) {
       if (activeTab === "all") {
-    fetchAuditLogs()
+        fetchAuditLogs()
+        fetchMlStatus() // Also fetch ML prediction status
       } else if (activeTab === "security") {
-    fetchSecurityEvents()
+        fetchSecurityEvents()
       }
     }
-  }, [user, authLoading, router, activeTab, fetchAuditLogs, fetchSecurityEvents])
+  }, [user, authLoading, router, activeTab, fetchAuditLogs, fetchSecurityEvents, fetchMlStatus])
 
   // Generate sample audit logs for fallback
   const generateSampleAuditLogs = (count: number): AuditLog[] => {
@@ -190,10 +244,11 @@ export default function AuditLogsPage() {
     setCurrentPage(1)
   }
 
-  // Handle manual refresh
+    // Handle manual refresh
   const handleRefresh = () => {
     if (activeTab === "all") {
-    fetchAuditLogs()
+      fetchAuditLogs()
+      fetchMlStatus() // Also refresh ML status
     } else if (activeTab === "security") {
       fetchSecurityEvents()
     }
@@ -274,6 +329,72 @@ export default function AuditLogsPage() {
           <Button onClick={() => router.push("/dashboard")}>Back to Dashboard</Button>
         </div>
       </div>
+
+      {/* ML Prediction Status and Controls */}
+      {mlPredictionStatus && (
+        <Card className="mb-6">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2">
+                  <Brain className="h-5 w-5 text-blue-600" />
+                  <span className="font-medium">ML Risk Prediction</span>
+                </div>
+                <div className="flex gap-4 text-sm">
+                  <span className="text-muted-foreground">
+                    <Database className="inline h-4 w-4 mr-1" />
+                    {mlPredictionStatus.totalLogs} total logs
+                  </span>
+                  <span className="text-green-600">
+                    <CheckCircle className="inline h-4 w-4 mr-1" />
+                    {mlPredictionStatus.predictedLogs} predicted
+                  </span>
+                  {mlPredictionStatus.unpredictedLogs > 0 && (
+                    <span className="text-orange-600">
+                      <Clock className="inline h-4 w-4 mr-1" />
+                      {mlPredictionStatus.unpredictedLogs} pending
+                    </span>
+                  )}
+                  <span className="text-blue-600">
+                    <TrendingUp className="inline h-4 w-4 mr-1" />
+                    {mlPredictionStatus.percentagePredicted}% complete
+                  </span>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {mlPredictionStatus.unpredictedLogs > 0 && (
+                  <Button
+                    onClick={runMlPredictions}
+                    disabled={isRunningPrediction}
+                    size="sm"
+                    className="bg-blue-600 hover:bg-blue-700"
+                  >
+                    {isRunningPrediction ? (
+                      <>
+                        <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                        Predicting...
+                      </>
+                    ) : (
+                      <>
+                        <Play className="h-4 w-4 mr-2" />
+                        Predict Risk Scores
+                      </>
+                    )}
+                  </Button>
+                )}
+              </div>
+            </div>
+            {predictionResult && (
+              <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-md">
+                <p className="text-sm text-green-800">
+                  ✅ {predictionResult.message}: {predictionResult.updated} logs updated 
+                  ({predictionResult.ml_predicted} ML predicted, {predictionResult.fallback} fallback)
+                </p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {error && (
         <Card className="mb-6 border-amber-200 bg-amber-50">
@@ -468,10 +589,23 @@ export default function AuditLogsPage() {
                                   />
                                 </div>
                               </div>
-                              <span className="text-sm font-medium">{log.risk_score}%</span>
+                              <div className="flex items-center gap-1">
+                                <span className="text-sm font-medium">{log.risk_score}%</span>
+                                {log.details?.mlPredicted && (
+                                  <div className="flex items-center gap-1">
+                                    <Brain className="h-3 w-3 text-blue-500" />
+                                    <span className="text-xs text-blue-500 font-medium">ML</span>
+                                  </div>
+                                )}
+                              </div>
                             </div>
                           ) : (
-                            <span className="text-gray-400">-</span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-gray-400">-</span>
+                              {log.details?.mlPredicted === false && (
+                                <span className="text-xs text-orange-500">Pending</span>
+                              )}
+                            </div>
                           )}
                         </TableCell>
                       </TableRow>
